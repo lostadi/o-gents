@@ -2,16 +2,26 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 
-export async function selectRsync({ execute = runCaptured, candidates = ['/opt/homebrew/bin/rsync', '/usr/local/bin/rsync', '/usr/bin/rsync'] } = {}) {
+export async function selectRsync({ execute = runCaptured, candidates = ['/opt/homebrew/bin/rsync', '/usr/local/bin/rsync', '/usr/bin/rsync'], platform = process.platform } = {}) {
+  let rejectedAppleLegacy = false;
   for (const candidate of candidates) {
     try {
       const { stdout } = await execute(candidate, ['--version'], { timeout: 3000, maxBytes: 16_384 });
       const protocol = Number(stdout.match(/protocol version\s*(\d+)/i)?.[1]);
       if (!Number.isInteger(protocol) || protocol < 29) continue;
       const version = stdout.match(/rsync\s+version\s+([\d.]+)/i)?.[1] ?? 'openrsync';
+      // Apple's 2.6.9 receiver calls F_PREALLOCATE even with --sparse, inflating
+      // checkpoint holes. This is not a protocol-29 limitation: openrsync and
+      // upstream Linux rsync remain eligible. openrsync also advertises 2.6.9
+      // compatibility, so identify it before rejecting the legacy Apple build.
+      if (platform === 'darwin' && candidate === '/usr/bin/rsync' && version === '2.6.9' && !/^openrsync:/im.test(stdout)) {
+        rejectedAppleLegacy = true;
+        continue;
+      }
       return { path: candidate, version, protocol, modern: /^3\./.test(version) };
     } catch { /* Fall back to the installed OS implementation. */ }
   }
+  if (rejectedAppleLegacy) throw new Error("Apple's macOS rsync 2.6.9 preallocates sparse VM checkpoints. Install modern rsync with 'brew install rsync', or use a sparse-capable alternative such as openrsync.");
   throw new Error('A working rsync (protocol 29 or newer) is required for stopped VM checkpoints');
 }
 

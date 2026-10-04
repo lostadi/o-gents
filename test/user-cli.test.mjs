@@ -394,6 +394,8 @@ test("setup interruption stops remaining installation steps", async () => {
   const calls = [];
   const code = await runSetup("/unused-project", {
     output: capture(), exists: () => false, installPrebuilt: async () => 130,
+    // Keep optional transfer setup independent of the runner's Homebrew/rsync.
+    availableCommand: () => true, inspectRsync: async () => ({ protocol: 31 }),
     run: async (file, args) => { calls.push([file, args]); return 0; },
   });
   assert.equal(code, 130);
@@ -430,6 +432,7 @@ test("failed or interrupted guest preparation stops setup before network or opti
     const output = capture();
     const code = await runSetup("/unused-setup-project", {
       output, exists: () => true, installPrebuilt: async () => 0,
+      availableCommand: () => true, inspectRsync: async () => ({ protocol: 31 }),
       run: async () => { calls += 1; return 0; },
       prepareGuests: async () => { throw failure; },
       prepareNetwork: async () => assert.fail("a failed profile must not start networking"),

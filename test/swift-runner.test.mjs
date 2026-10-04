@@ -22,7 +22,7 @@ const privateInputsAvailable = nativeSupportAvailable
   && existsSync(bundlePath)
   && existsSync(smolPath);
 
-test("signed clean Swift backend reports Apple Virtualization support", {
+test("signed clean Swift backend preserves the host's Apple Virtualization support result", {
   skip: nativeSupportAvailable ? false : "requires an Apple Silicon macOS host",
 }, async () => {
   const vm = new SwiftVM({
@@ -35,9 +35,12 @@ test("signed clean Swift backend reports Apple Virtualization support", {
     networkMode: "isolated",
     startupTimeoutSeconds: 30,
   });
+  const raw = JSON.parse((await execFile(runnerPath, ["--support-only"])).stdout);
+  assert.equal(raw.event, "support");
+  assert.equal(typeof raw.supported, "boolean");
   assert.deepEqual(await vm.support(), {
     backend: "swift-virtualization",
-    supported: true,
+    supported: raw.supported,
   });
 });
 

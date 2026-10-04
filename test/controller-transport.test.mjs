@@ -63,21 +63,55 @@ test('receipt transport retains the aggregate output of sixteen artifact capture
   assert.equal(Buffer.byteLength(result.stdout), bytes);
 });
 
-test('protocol29 sparse rsync preserves a large logical hole in a temporary file', async t => {
+test('rsync selection bypasses the sparse-inflating Apple receiver without rejecting protocol 29', async () => {
+  const legacy = 'rsync  version 2.6.9  protocol version 29';
+  const modern = 'rsync  version 3.5.1  protocol version 33';
+  const openrsync = 'openrsync: protocol version 29\nrsync version 2.6.9 compatible';
+  const execute = async binary => ({ stdout: { '/usr/bin/rsync': legacy, '/custom-legacy': legacy, '/modern': modern, '/openrsync': openrsync }[binary] });
+  const selected = await selectRsync({ platform: 'darwin', candidates: ['/usr/bin/rsync', '/modern'], execute });
+  assert.equal(selected.path, '/modern'); assert.equal(selected.modern, true);
+  const replacement = await selectRsync({ platform: 'darwin', candidates: ['/usr/bin/rsync', '/openrsync'], execute });
+  assert.equal(replacement.path, '/openrsync'); assert.equal(replacement.protocol, 29);
+  const linux = await selectRsync({ platform: 'linux', candidates: ['/usr/bin/rsync'], execute });
+  assert.equal(linux.version, '2.6.9'); assert.equal(linux.modern, false);
+  const customLegacy = await selectRsync({ platform: 'darwin', candidates: ['/custom-legacy'], execute });
+  assert.equal(customLegacy.path, '/custom-legacy', 'Apple-specific preallocation must not disqualify unrelated legacy builds');
+  const systemReplacement = await selectRsync({ platform: 'darwin', candidates: ['/usr/bin/rsync'], execute: async () => ({ stdout: openrsync }) });
+  assert.equal(systemReplacement.path, '/usr/bin/rsync', 'the newer system openrsync remains eligible');
+  await assert.rejects(selectRsync({ platform: 'darwin', candidates: ['/usr/bin/rsync'], execute }),
+    /Apple's macOS rsync 2\.6\.9 preallocates sparse VM checkpoints.*brew install rsync/);
+});
+
+test('production protocol29 checkpoint transport preserves sparse bytes through remote-shell initial and delta transfers', async t => {
+  const rsync = await selectRsync();
   const root = await mkdtemp(path.join(os.tmpdir(), 'ovm-rsync-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const source = path.join(root, 'source.img'); const target = path.join(root, 'target.img');
+  const snapshot = path.join(root, 'remote snapshot'); const destination = path.join(root, 'local checkpoint');
+  await mkdir(snapshot); await mkdir(destination);
+  const source = path.join(snapshot, 'guest.rootfs.img'); const target = path.join(destination, 'guest.rootfs.img');
   const file = await open(source, 'w');
   await file.write(Buffer.from('begin'), 0, 5, 0); await file.write(Buffer.from('end'), 0, 3, 32 * 1024 ** 2); await file.close();
-  await runCaptured('rsync', ['-aS', '--protocol=29', '--partial', '--checksum', '--', source, target]);
+  const sourceMetadata = await stat(source);
+  assert.ok(sourceMetadata.blocks * 512 < sourceMetadata.size / 2, 'fixture filesystem must support sparse files');
+  const shell = path.join(root, 'remote-shell');
+  // Exercise the actual remote sender/receiver protocol and production flags
+  // without depending on an SSH service or credentials in the test environment.
+  await writeFile(shell, '#!/bin/sh\nshift\nexec /bin/sh -c "$*"\n', { mode: 0o700 });
+  const transfer = async seeded => {
+    const options = checkpointRsyncOptions({ rsync, peer: { host: 'fixture', rsyncPath: rsync.path, rsyncProtocol: 29 },
+      source: snapshot + '/', destination: destination + '/', seeded });
+    options.args[options.args.indexOf('-e') + 1] = shell;
+    await runCaptured(rsync.path, options.args, { env: options.env });
+  };
+  await transfer(false);
   const metadata = await stat(target); assert.equal(metadata.size, 32 * 1024 ** 2 + 3);
-  assert.ok(metadata.blocks * 512 < metadata.size / 2);
-  const copied = await readFile(target); assert.equal(copied.subarray(0, 5).toString(), 'begin'); assert.equal(copied.subarray(-3).toString(), 'end');
+  assert.ok(metadata.blocks * 512 < metadata.size / 2, `${rsync.path} initial checkpoint must retain sparse allocation`);
+  assert.deepEqual(await readFile(target), await readFile(source), 'all bytes, including the zero-filled hole, survive initial transfer');
   const changed = await open(source, 'r+'); await changed.write(Buffer.from('new'), 0, 3, 32 * 1024 ** 2); await changed.close();
   await utimes(source, metadata.atime, metadata.mtime);
-  await runCaptured('rsync', ['-a', '--inplace', '--no-whole-file', '--protocol=29', '--ignore-times', '--', source, target]);
-  assert.equal((await readFile(target)).subarray(-3).toString(), 'new');
-  assert.ok((await stat(target)).blocks * 512 < metadata.size / 2, 'in-place delta preserves existing sparse regions');
+  await transfer(true);
+  assert.deepEqual(await readFile(target), await readFile(source), 'same-size delta with restored mtime must update every changed byte');
+  assert.ok((await stat(target)).blocks * 512 < metadata.size / 2, `${rsync.path} in-place delta must preserve existing sparse regions`);
 });
 
 test('actual rsync remote-shell protocol preserves paths containing spaces, quotes, shell substitutions, and globs', async t => {

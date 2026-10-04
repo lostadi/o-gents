@@ -1,18 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, mkdir, open, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, open, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
-  CLAUDE_SOURCE_BUNDLE,
   bundleOpenPids,
-  ensurePrivateIdentity,
   verifyDirectBootArtifacts,
-  verifyBundle,
   verifyShareDirectory,
   verifyPreparedRootfsSize,
 } from "../src/preflight.mjs";
+
+async function fixturePreflight(sourceBundle) {
+  // The source pin is captured at module load. Give this test its own module
+  // instance so no fixture depends on a user's installed Claude bundle.
+  const previous = process.env.CLAUDE_VM_SOURCE_BUNDLE;
+  process.env.CLAUDE_VM_SOURCE_BUNDLE = sourceBundle;
+  try {
+    const url = new URL("../src/preflight.mjs", import.meta.url);
+    url.searchParams.set("fixture", sourceBundle);
+    return await import(url.href);
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_VM_SOURCE_BUNDLE;
+    else process.env.CLAUDE_VM_SOURCE_BUNDLE = previous;
+  }
+}
 
 test("an enlarged guest disk requires a verified preparation receipt for its exact sizes", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "ovm-prepared-"));
@@ -36,17 +48,24 @@ test("an enlarged guest disk requires a verified preparation receipt for its exa
 });
 
 test("bundle verifier rejects a disk symlink into Claude's original", async () => {
-  const privateRoot = await mkdtemp(path.join(os.tmpdir(), "claude-vm-alias-"));
+  const fixture = await mkdtemp(path.join(os.tmpdir(), "claude-vm-alias-"));
+  const source = path.join(fixture, "source.bundle");
+  const privateRoot = path.join(fixture, "private");
   const clone = path.join(privateRoot, "claudevm.bundle");
-  await mkdir(clone);
-  await symlink(path.join(CLAUDE_SOURCE_BUNDLE, "rootfs.img"), path.join(clone, "rootfs.img"));
   try {
+    await mkdir(source);
+    await mkdir(clone, { recursive: true });
+    await writeFile(path.join(source, "rootfs.img"), "source disk fixture");
+    await symlink(path.join(source, "rootfs.img"), path.join(clone, "rootfs.img"));
+    const { verifyBundle } = await fixturePreflight(source);
     await assert.rejects(
-      () => verifyBundle(clone, CLAUDE_SOURCE_BUNDLE, privateRoot),
+      () => verifyBundle(clone, source, privateRoot),
       /symbolic link/,
     );
+    await assert.rejects(() => verifyBundle(source, source, privateRoot), /original VM bundle/);
+    await assert.rejects(() => verifyBundle(clone, privateRoot, privateRoot), /decoy source/);
   } finally {
-    await rm(privateRoot, { recursive: true, force: true });
+    await rm(fixture, { recursive: true, force: true });
   }
 });
 
@@ -69,19 +88,36 @@ test("clone open-file probe rejects lsof path errors", async () => {
 });
 
 test("private identity initialization is repeatable and marker-checked", async () => {
-  const clone = await mkdtemp(path.join(os.tmpdir(), "claude-vm-identity-"));
-  await Promise.all([
-    writeFile(path.join(clone, "rootfs.img"), "root"),
-    writeFile(path.join(clone, "sessiondata.img"), "session"),
-    writeFile(path.join(clone, "efivars.fd"), "efi"),
-    writeFile(path.join(clone, "machineIdentifier"), "placeholder"),
-    writeFile(path.join(clone, "gvisorMacAddress"), "fe:ba:88:eb:e0:d7"),
-  ]);
+  const fixture = await mkdtemp(path.join(os.tmpdir(), "claude-vm-identity-"));
+  const source = path.join(fixture, "source.bundle");
+  const clone = path.join(fixture, "clone.bundle");
+  const markerPath = path.join(clone, ".ollama-vm-identity-v1");
   try {
+    await Promise.all([mkdir(source), mkdir(clone)]);
+    await Promise.all([
+      writeFile(path.join(source, "machineIdentifier"), "source identity fixture"),
+      writeFile(path.join(source, "gvisorMacAddress"), "fe:ba:88:eb:e0:d7"),
+      writeFile(path.join(clone, "rootfs.img"), "root"),
+      writeFile(path.join(clone, "sessiondata.img"), "session"),
+      writeFile(path.join(clone, "efivars.fd"), "efi"),
+      writeFile(path.join(clone, "machineIdentifier"), "placeholder"),
+      writeFile(path.join(clone, "gvisorMacAddress"), "fe:ba:88:eb:e0:d7"),
+    ]);
+    const { ensurePrivateIdentity } = await fixturePreflight(source);
     assert.equal(await ensurePrivateIdentity(clone), true);
+    const markerText = await readFile(markerPath, "utf8");
+    const identity = await readFile(path.join(clone, "machineIdentifier"));
     assert.equal(await ensurePrivateIdentity(clone), false);
+    assert.equal(await readFile(markerPath, "utf8"), markerText);
+    assert.deepEqual(await readFile(path.join(clone, "machineIdentifier")), identity);
+
+    await writeFile(markerPath, JSON.stringify({ ...JSON.parse(markerText), machineIdentifierSha256: "0".repeat(64) }));
+    await assert.rejects(() => ensurePrivateIdentity(clone), /marker does not match/);
+    await writeFile(markerPath, markerText);
+    await writeFile(path.join(source, "machineIdentifier"), identity);
+    await assert.rejects(() => ensurePrivateIdentity(clone), /original identity/);
   } finally {
-    await rm(clone, { recursive: true, force: true });
+    await rm(fixture, { recursive: true, force: true });
   }
 });
 
