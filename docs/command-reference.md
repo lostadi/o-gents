@@ -524,7 +524,7 @@ The MCP default is a start/operation/stop transaction. Setting
 `CLAUDE_VM_LIFETIME=process` keeps a VM for that MCP process's lifetime; closing
 the controller ends it. In that mode even controller startup for a status or
 console request may warm a VM. It is not an independently managed background
-service. Use the existing [MCP documentation](../README.md) for client setup.
+service. See the [Apple VM runner and MCP documentation](apple-mcp-runner.md) for its lifecycle and operating limits.
 
 ### Raw parallel fleet
 

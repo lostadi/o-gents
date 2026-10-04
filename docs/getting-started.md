@@ -19,8 +19,8 @@ their existing names.
 ```zsh
 cd /Users/ustad/claude-vm-mcp
 ./bin/gent setup
-gent check
-gent chat
+./bin/gent check
+./bin/gent chat
 ```
 
 `gent chat` opens one persistent gent with its own Linux VM. Ask it to run
@@ -334,7 +334,7 @@ git clone git@github.com:lostadi/o-gents.git
 cd o-gents
 ./bin/gent setup
 ./bin/gent check
-gent chat "Run uname -m and report its output"
+./bin/gent chat "Run uname -m and report its output"
 ```
 
 Setup installs signed Swift launchers and the `~/.local/bin` shortcut. Private
@@ -450,5 +450,5 @@ redundant old Rack base copy were also removed after closed-disk checks; the loc
 APFS rollback remains. `runtime/qemu-portability-20261004/rack-pairing-fixture-cleanup.json`
 records about 28.24 GB free afterward. Admission continues to check current
 capacity rather than treating this measurement as a reservation.
-See [networking](networking.md) and the [README validation history](../README.md#validation-status)
+See [networking](networking.md) and the [historical validation record](validation-history.md)
 for the retained earlier peer, normal-MCP, Spark and Jan-era records.
