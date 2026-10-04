@@ -377,7 +377,7 @@ async function sourceInventory(options) {
       source: { swarmId: agent.state.swarmId, instanceId: previous?.instanceId ?? stableOrigin, lineageId: previous?.lineageId ?? stableOrigin, parentInstanceId: previous?.parentInstanceId ?? null },
       capabilities: { guestArchitecture: "aarch64", guestOperatingSystem: "linux",
         supportedBackends: [...(helperIncluded ? ["apple-vz-arm64"] : []), "qemu-arm64"],
-        requiredHost: "VMAgents with Node 26+ and a supported ARM64 guest backend: QEMU on Linux/macOS, or Apple Virtualization on Apple Silicon when its helper is included.",
+        requiredHost: "o-gents with Node 26+ and a supported ARM64 guest backend: QEMU on Linux/macOS, or Apple Virtualization on Apple Silicon when its helper is included.",
         modelRuntime: "A separately installed compatible Ollama server is required for inference; included weights do not verify server readiness.", hostNativeProvidersIncluded: false },
       model: { name: model, manifestPath: `model/${manifestRelative}`, weightsIncluded: true, blobs: blobs.map(({ digest, size }) => ({ digest, size })) },
       runtime: { kernelPath: "runtime/vmlinuz", initrdPath: "runtime/initrd", helperPath: helperIncluded ? "runtime/smol-bin.arm64.img" : null, profilePath: "runtime/profile.json", baseRootfsPath: pockets[0].rootfsPath, sessionDiskBytes, sessionDiskPolicy: "fresh-disposable-sparse-disk" },
@@ -526,7 +526,7 @@ export function validateCapsuleManifest(manifest, { maximumLogicalBytes = LOGICA
 
 async function readManifest(handle, options) {
   const prefix = await readExact(handle, CAPSULE_MAGIC.length + 8, 0);
-  if (!prefix.subarray(0, CAPSULE_MAGIC.length).equals(CAPSULE_MAGIC)) throw new Error("Not a supported VMAgents capsule (OVM v1 format)");
+  if (!prefix.subarray(0, CAPSULE_MAGIC.length).equals(CAPSULE_MAGIC)) throw new Error("Not a supported o-gents capsule (OVM v1 format)");
   const length = Number(prefix.readBigUInt64BE(CAPSULE_MAGIC.length));
   safeInteger(length, HEADER_LIMIT, "header length");
   if (!length) throw new Error("Empty capsule header");

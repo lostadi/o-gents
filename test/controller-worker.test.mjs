@@ -7,6 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { cloneControllerSnapshot, controllerProbe, handleControllerRequest, runControllerJob } from '../src/controller-worker.mjs';
 import { runCaptured } from '../src/controller-transport.mjs';
+import { buildOstadixTask } from '../src/ostadix-control.mjs';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const recipe = 'a'.repeat(64);
@@ -18,6 +19,85 @@ async function temporary(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'ovm-controller-test-'));
   t.after(() => rm(root, { recursive: true, force: true })); return root;
 }
+
+test('near-limit Ostadix source and checks survive remote admission and worker dispatch intact', async t => {
+  const root = await temporary(t);
+  const prefix = 'python^(\n# ', suffix = '\n__oval_result__ = 2\n)_python\n';
+  const source = prefix + 'x'.repeat(8192 - Buffer.byteLength(prefix + suffix)) + suffix;
+  const task = buildOstadixTask({ type: 'ostadix', mode: 'run', name: 'large-program', source,
+    checks: Array.from({ length: 8 }, () => ({ kind: 'stdout_contains', expected: 'x'.repeat(4096) })) },
+  { id: 'alpha' }, { round: 1 });
+  assert.equal(Buffer.byteLength(source), 8192);
+  assert.ok(Buffer.byteLength(task.command) > 8192);
+  assert.ok(Buffer.byteLength(task.command) <= 128 * 1024);
+  const work = { ...request('ostadix-capture'), tasks: [{ agentId: task.agentId, command: task.command, artifactCapture: task.artifactCapture }] };
+  let launches = 0, executions = 0;
+  const launch = () => {
+    launches += 1; const child = new EventEmitter(); child.pid = process.pid; child.unref = () => {};
+    queueMicrotask(() => child.emit('spawn')); return child;
+  };
+  assert.equal((await handleControllerRequest(work, { root, probe: ready, launch })).admitted, true);
+  class Fleet {
+    constructor(options) { this.directory = options.stateDirectory; }
+    async run(tasks) {
+      executions += 1; assert.deepEqual(tasks, work.tasks);
+      await writeFile(path.join(this.directory, 'alpha.rootfs.img'), 'stopped capture fixture');
+      return [{ agent: 'alpha', stopped: true, exitCode: 0 }];
+    }
+  }
+  await runControllerJob(work.id, { root, Fleet, probe: ready, clone: copyFile });
+  const job = path.join(root, 'runtime/distribution/jobs', work.id);
+  assert.deepEqual(JSON.parse(await readFile(path.join(job, 'request.json'))), work);
+  assert.equal(JSON.parse(await readFile(path.join(job, 'receipt.json'))).phase, 'completed');
+  assert.equal(launches, 1); assert.equal(executions, 1);
+});
+
+test('remote command limits preserve raw VM bounds and allow sixteen bounded capture commands', async t => {
+  const root = await temporary(t); let launches = 0;
+  const launch = () => {
+    launches += 1; const child = new EventEmitter(); child.pid = process.pid; child.unref = () => {};
+    queueMicrotask(() => child.emit('spawn')); return child;
+  };
+  for (const artifactCapture of [undefined, false]) {
+    const work = { ...request(`raw-boundary-${artifactCapture}`), tasks: [{ agentId: 'alpha', command: 'x'.repeat(8192), artifactCapture }] };
+    assert.equal((await handleControllerRequest(work, { root, probe: ready, launch })).admitted, true);
+  }
+  const batch = { ...request('capture-boundary'), tasks: Array.from({ length: 16 }, (_, index) => ({
+    agentId: `agent-${index}`, command: 'x'.repeat(128 * 1024), artifactCapture: true,
+  })) };
+  assert.equal((await handleControllerRequest(batch, { root, probe: ready, launch })).admitted, true);
+  assert.equal(launches, 3);
+  const invalid = [
+    { command: 'x'.repeat(8193) },
+    { command: 'x'.repeat(8193), artifactCapture: false },
+    { command: 'é'.repeat(4097) },
+    { command: 'x'.repeat(128 * 1024 + 1), artifactCapture: true },
+    { command: 'é'.repeat(64 * 1024 + 1), artifactCapture: true },
+    { command: 'x'.repeat(8193), artifactCapture: 'true' },
+    { command: 'echo bounded', artifactCapture: 'true' },
+  ];
+  for (const [index, task] of invalid.entries()) {
+    const work = { ...request(`command-invalid-${index}`), tasks: [{ agentId: 'alpha', ...task }] };
+    await assert.rejects(handleControllerRequest(work, { root,
+      probe: () => assert.fail('invalid command must be rejected before capacity inspection'),
+      launch: () => assert.fail('invalid command must not launch a worker'),
+    }), error => error.rejected === true && /Invalid/.test(error.message));
+    await assert.rejects(stat(path.join(root, 'runtime/distribution/jobs', work.id)), { code: 'ENOENT' });
+  }
+});
+
+test('aggregate remote request budget includes JSON escaping across individually valid captures', async t => {
+  const root = await temporary(t);
+  const work = { ...request('escaped-captures'), tasks: Array.from({ length: 16 }, (_, index) => ({
+    agentId: `agent-${index}`, command: '\\'.repeat(128 * 1024), artifactCapture: true,
+  })) };
+  assert.ok(Buffer.byteLength(JSON.stringify(work)) > 4 * 1024 * 1024);
+  await assert.rejects(handleControllerRequest(work, { root,
+    probe: () => assert.fail('oversized request must be rejected before capacity inspection'),
+    launch: () => assert.fail('oversized request must not launch a worker'),
+  }), error => error.rejected === true && /Controller request is too large/.test(error.message));
+  await assert.rejects(stat(path.join(root, 'runtime/distribution/jobs', work.id)), { code: 'ENOENT' });
+});
 
 test('concurrent duplicate admission spawns one worker and refuses changed work', async t => {
   const root = await temporary(t); let launches = 0;

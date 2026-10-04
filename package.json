@@ -1,9 +1,9 @@
 {
-  "name": "vma-gents",
+  "name": "o-gents",
   "version": "0.5.0",
   "private": true,
   "type": "module",
-  "description": "VMAgents: autonomous agents with a VM of their own. Save, clone, and move each gent with its environment, history, and model.",
+  "description": "o-gents: Ostadix-powered autonomous agents, each with a VM of their own. Save, clone, move, and peer-check each gent with its environment and history.",
   "engines": {
     "node": ">=26.0.0"
   },
@@ -20,7 +20,8 @@
     "test": "node --test test/*.test.mjs",
     "start": "node ./scripts/start.mjs",
     "chat": "./bin/gent chat",
-    "mcp": "./bin/claude-vm-mcp"
+    "mcp": "./bin/claude-vm-mcp",
+    "verify:ostadix-peer": "node scripts/verify-ostadix-peer.mjs --run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
@@ -43,12 +44,18 @@
     "@types/node": "^26.6.2",
     "typescript": "^7.0.2"
   },
-  "keywords": ["autonomous-agents", "microvm", "virtual-machine", "ollama", "local-ai"],
+  "keywords": [
+    "autonomous-agents",
+    "microvm",
+    "virtual-machine",
+    "ollama",
+    "local-ai"
+  ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lostadi/vma-gents.git"
+    "url": "git+https://github.com/lostadi/o-gents.git"
   },
-  "homepage": "https://github.com/lostadi/vma-gents#readme",
+  "homepage": "https://github.com/lostadi/o-gents#readme",
   "author": "Lee Daghlar Ostadi",
   "license": "ISC"
 }

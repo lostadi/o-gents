@@ -6,6 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { CAPSULE_MAGIC, cloneAgentCapsule, estimateCapsuleImportBudget, exportAgentCapsule, importAgentCapsule, inspectAgent, inspectAgentCapsule, listAgents, ollamaManifestRelative, runAgentCommand, validateCapsuleManifest } from "../src/agent-capsule.mjs";
 import { VMLease } from "../src/lease.mjs";
+import { AgentArtifactStore } from "../src/agent-artifacts.mjs";
+import { PocketSwarm } from "../src/pocket-swarm.mjs";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 async function fixture(t) {
@@ -419,4 +421,93 @@ test("capsules retain immutable published artifact bytes and reject incomplete a
   assert.deepEqual(JSON.parse(await readFile(path.join(restored.directory, "artifacts/index.json"))), index);
   await rm(path.join(directory, `sha256-${sha256}`));
   await assert.rejects(exportAgentCapsule({ ...f.options, outputPath: path.join(f.root, "missing-artifact.ovm") }), /artifact byte closure is incomplete/);
+});
+
+test("O program contracts and historical peer reviews survive capsule import without replay or new certification", async t => {
+  const f = await fixture(t);
+  const sourceFor = number => `python^(\n__oval_result__ = ${number}\n)_python\n\n`;
+  const actionFor = number => ({ type: "ostadix", source: sourceFor(number), name: "result", mode: "run",
+    checks: [{ kind: "stdout_equals", expected: `[number] ${number}\n` }] });
+  const phase = stdout => ({ exitCode: 0, stdout, stderr: "", timedOut: false, outputLimitExceeded: false });
+  let submissions = 0;
+  const fleet = {
+    rootfsPath: id => path.join(f.directory, `${id}.rootfs.img`),
+    async run(tasks) {
+      submissions++;
+      return tasks.map(task => {
+        const program = task.ostadix;
+        const number = program.source === sourceFor(2) ? 2 : program.source === sourceFor(3) ? 3 : assert.fail("unexpected source");
+        const receipt = { schema: "ovm.ostadix-execution/v1", sourceSha256: program.sourceSha256, mode: "run", error: null,
+          parse: phase(JSON.stringify({ ok: true, stage: "parse", source_structure: { schema: "ostadix.source-structure/v1",
+            required_initial_bindings: [], languages: ["python"], top_level_literal_text: false, plan_nodes: 3,
+            backend_syntax_checks: [{ language: "python", state: "valid", result_capture: "explicit_result" }] } })),
+          intent: phase(JSON.stringify({ schema: "oexec.execution-intent/v1", source_sha256: program.sourceSha256, execution_intent_sha256: "a".repeat(64) })),
+          execution: phase(`[number] ${number}\n`),
+        };
+        return { agent: task.agentId, stopped: true, exitCode: 0, output: program.token + JSON.stringify(receipt) + "\n" };
+      });
+    },
+  };
+  const base = { mission: "first mission", agents: [{ id: "builder", role: "write" }, { id: "child", role: "review" }],
+    vmFleet: fleet, nativeBroker: { async describe() { return { operations: [] }; } },
+    stateDirectory: f.directory, swarmId: "original", model: "test-model:latest", maximumRounds: 1 };
+  await new PocketSwarm({ ...base, modelClient: { async decide() { return { content: '{"actions":[]}' }; } } }).run();
+  const baseline = JSON.parse(await readFile(path.join(f.directory, "swarm.json"), "utf8"));
+  await new PocketSwarm({ ...base, resumeState: baseline, mission: "review the revised program", missionOverride: true, maximumRounds: 2,
+    modelClient: { async decide(agent, context) {
+      const actions = context.round === 2
+        ? agent.id === "builder" ? [actionFor(2)] : []
+        : agent.id === "builder" ? [actionFor(3)] : [{ type: "review_artifact", artifactId: context.availableArtifacts[0].id }];
+      return { content: JSON.stringify({ actions }) };
+    } },
+  }).run();
+  const sourceStateBytes = await readFile(path.join(f.directory, "swarm.json"), "utf8");
+  const original = JSON.parse(sourceStateBytes);
+  assert.equal(original.reviewStartRound, 1);
+  assert.equal(original.programArtifacts.length, 2);
+  assert.equal(original.artifactReviews.length, 1);
+  assert.equal(original.artifactReviews[0].status, "peer-verified");
+  assert.equal(submissions, 2);
+
+  await exportAgentCapsule({ ...f.options, outputPath: f.archivePath });
+  const { manifest } = await inspectAgentCapsule({ archivePath: f.archivePath });
+  assert.equal(manifest.artifacts.length, 3, "The capsule must contain both source blobs and the contract index");
+  const restored = await importAgentCapsule({ ...f.options, archivePath: f.archivePath, agentId: "program-replica", installModel: false });
+  const imported = JSON.parse(await readFile(restored.statePath, "utf8"));
+  assert.notEqual(imported.capsuleIdentity.instanceId, original.capsuleIdentity.instanceId);
+  assert.equal(imported.reviewStartRound, 1);
+  assert.equal(imported.mission, original.mission);
+  assert.deepEqual(imported.programArtifacts, original.programArtifacts);
+  assert.deepEqual(imported.artifactReviews, original.artifactReviews);
+  assert.deepEqual(imported.transcript, original.transcript);
+  assert.equal(await readFile(restored.originalHistoryPath, "utf8"), sourceStateBytes);
+  assert.equal(await readFile(path.join(f.directory, "swarm.json"), "utf8"), sourceStateBytes, "Export and import must not rewrite the original review evidence");
+
+  const importedStore = new AgentArtifactStore({ stateDirectory: restored.directory, swarmId: restored.agentId });
+  for (const [index, artifact] of imported.programArtifacts.entries()) {
+    const loaded = await importedStore.readOstadixArtifact(artifact.id);
+    assert.equal(loaded.source, sourceFor(index + 2));
+    assert.deepEqual(loaded.action.checks, actionFor(index + 2).checks);
+    assert.deepEqual(loaded.artifact, original.programArtifacts[index]);
+    assert.equal(loaded.artifact.code.producerInstanceId, original.capsuleIdentity.instanceId, "A clone cannot relabel old execution as a new independent observation");
+    assert.equal(loaded.artifact.claimStatus, "awaiting-peer-review");
+    assert.equal(loaded.artifact.semanticVerification, false);
+  }
+  const latest = imported.programArtifacts.at(-1);
+  const resumed = await new PocketSwarm({ ...base, mission: undefined, agents: undefined, swarmId: undefined,
+    resumeState: imported, stateDirectory: restored.directory,
+    vmFleet: { rootfsPath: id => path.join(restored.directory, `${id}.rootfs.img`), async run() { assert.fail("Import must not replay a successful source run or historical review"); } },
+    modelClient: { async decide(agent, context) {
+      if (agent.id !== "builder") return { content: '{"actions":[]}' };
+      assert.deepEqual(context.pendingCodeReviews.map(artifact => artifact.id), [latest.id]);
+      return { content: JSON.stringify({ actions: [{ type: "finish", summary: "Attempt completion from old producer evidence",
+        assertions: [{ evidenceId: latest.code.executionEvidenceId, kind: "ostadix_checks_passed", expected: true }] }] }) };
+    } },
+  }).run();
+  assert.equal(resumed.completed, false);
+  assert.ok(resumed.transcript.at(-2).observation.repairs.some(repair => repair.reason === "awaiting-peer-review"));
+  assert.deepEqual(resumed.artifactReviews, original.artifactReviews, "Restoring the capsule cannot mint an independent review");
+  assert.equal(resumed.programArtifacts[0].peerVerification.status, "peer-verified", "Historical review remains attached to its original source");
+  assert.equal(resumed.programArtifacts[1].peerVerification.status, "awaiting-peer-review", "The newer source still requires a distinct peer execution");
+  assert.equal(submissions, 2);
 });

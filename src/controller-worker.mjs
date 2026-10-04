@@ -17,6 +17,9 @@ import { hostMemory } from './host-resources.mjs';
 import { controllerDiskBudget } from './controller-disk.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MAX_CONTROLLER_REQUEST_BYTES = 4 * 1024 * 1024;
+const MAX_VM_COMMAND_BYTES = 8192;
+const MAX_CAPTURE_COMMAND_BYTES = 128 * 1024;
 const validId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,96}$/.test(value);
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -161,6 +164,9 @@ export async function controllerProbe(root = ROOT, { backend, environment = proc
     network: await networkStatus({ projectRoot: root }).catch(error => ({ configured: false, error: error.message })) };
 }
 function validateRun(request) {
+  // Keep direct admission and stored-job validation within the same aggregate
+  // budget as the newline-delimited stdin protocol, including JSON escaping.
+  if (Buffer.byteLength(JSON.stringify(request)) + 1 > MAX_CONTROLLER_REQUEST_BYTES) throw new Error('Controller request is too large');
   if (!validId(request.stateKey) || !validId(request.id)) throw new Error('Invalid dispatch or agent state identity');
   if (!Array.isArray(request.tasks) || request.tasks.length < 1 || request.tasks.length > 16) throw new Error('Dispatch requires 1–16 tasks');
   if (!Number.isInteger(request.memoryMB) || request.memoryMB < 512 || request.memoryMB > 4096 || !Number.isInteger(request.cpuCount) || request.cpuCount < 1 || request.cpuCount > 4) throw new Error('Invalid VM resources');
@@ -169,7 +175,10 @@ function validateRun(request) {
   if (request.backend !== undefined && !['auto', 'apple', 'qemu'].includes(request.backend)) throw new Error('Invalid VM backend');
   const seen = new Set();
   for (const task of request.tasks) {
-    if (!validId(task.agentId) || seen.has(task.agentId) || typeof task.command !== 'string' || Buffer.byteLength(task.command) > 8192 || !task.command.trim()) throw new Error('Invalid or repeated VM task');
+    // Capture commands include controller-generated source, check contracts,
+    // and receipt code. Ordinary VM commands retain their smaller limit.
+    const maximum = task?.artifactCapture === true ? MAX_CAPTURE_COMMAND_BYTES : MAX_VM_COMMAND_BYTES;
+    if (!validId(task?.agentId) || seen.has(task.agentId) || typeof task.command !== 'string' || Buffer.byteLength(task.command) > maximum || !task.command.trim()) throw new Error('Invalid or repeated VM task');
     if (task.parentId != null && !validId(task.parentId)) throw new Error('Invalid parent pocket');
     if (task.artifactCapture !== undefined && typeof task.artifactCapture !== 'boolean') throw new Error('Invalid artifact capture flag');
     seen.add(task.agentId);
@@ -341,7 +350,7 @@ export async function runControllerStdio({ root = ROOT, input = process.stdin, o
   let text = '';
   let request;
   try {
-    for await (const chunk of input) { text += chunk; if (Buffer.byteLength(text) > 4 * 1024 * 1024) throw new Error('Controller request is too large'); }
+    for await (const chunk of input) { text += chunk; if (Buffer.byteLength(text) > MAX_CONTROLLER_REQUEST_BYTES) throw new Error('Controller request is too large'); }
     request = JSON.parse(text);
     applyDistributionEnvironment(root);
     const result = await handleControllerRequest(request, { root });

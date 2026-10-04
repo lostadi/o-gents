@@ -1,11 +1,11 @@
-# VMAgents complete command reference and use guide
+# o-gents complete command reference and use guide
 
 Checked against this checkout's CLI help and parsers on 2026-10-04.
 Run commands in Terminal or Warp. No JavaScript or TypeScript compilation is
 needed. On Lee's Mac, `gent` is installed at `~/.local/bin/gent` and points to
 `/Users/ustad/claude-vm-mcp/bin/gent`.
 
-This reference covers the public VMAgents commands, aliases, daily options, model
+This reference covers the public o-gents commands, aliases, daily options, model
 settings, saved gents, and advanced launchers. Host-installed Ostadix and
 Ollama have their own command catalogs. The setup walkthrough is in
 [getting-started.md](getting-started.md); full capsule details are in
@@ -99,17 +99,20 @@ gent task "Inspect the Linux environment" --dry-run
 ```
 
 Options can precede or follow the quoted mission. Default task: one gent,
-maximum one gent, four reasoning rounds. `--agents 3` both starts and caps the
+maximum two gents, four reasoning rounds. The spare capacity permits a peer
+checker without starting a second gent immediately. `--agents 3` both starts and caps the
 team at three unless you also supply `--max-agents`. Child gents need room
 under that cap. Round limits preserve unfinished state; they do not establish
-completion. Continue with `gent resume ID --rounds 8`.
+completion. Continue with `gent resume ID --rounds 8`. Saved tasks keep their
+cap unless you override it; use `gent resume ID --max-agents 2 --rounds 8` when
+a single-gent task needs room for a distinct code reviewer.
 
 ### Task and VM-chat options
 
 | Option | Meaning / default |
 | --- | --- |
 | `--agents N` | Initial team size, 1–8. Task default 1; VM chat requires 1. |
-| `--max-agents N` | Total cap including descendants, 1–16 and at least the initial count. Task default equals initial size. |
+| `--max-agents N` | Total cap including descendants, 1–16 and at least the initial count. A new task/VM chat defaults to the larger of 2 and its initial count, unless its specification sets a cap. Resume retains the saved cap. An explicit 1 prevents creation of a distinct reviewer. |
 | `--rounds N` | Reasoning rounds for this invocation, 1–20. Task default 4; chat default 6. |
 | `--model NAME` | Select an installed Ollama model. Default `huihui-spark-vm:32k`; resume otherwise retains its saved model. |
 | `--swarm-id ID` | Give a new family a memorable ID. Existing IDs require resume. |
@@ -192,7 +195,7 @@ gent export parser-work ~/parser-work.ovm
 ```
 
 Copy `~/parser-work.ovm` to the destination with your normal file transfer, then
-run there from an installed VMAgents controller:
+run there from an installed o-gents controller:
 
 ```bash
 gent import ~/parser-work.ovm parser-copy
@@ -201,7 +204,7 @@ gent chat --resume parser-copy
 
 Weights are always included. Import retains original history separately and
 creates a new instance identity; it neither replays old commands nor starts
-Ollama or a VM. Host VM engines, the VMAgents controller and Ollama executable remain
+Ollama or a VM. Host VM engines, the o-gents controller and Ollama executable remain
 host prerequisites. If a remote outcome is unresolved, resume to reconcile it
 before exporting or cloning. See [capsule format and private-model serving](agent-capsule-format.md).
 
@@ -229,7 +232,7 @@ gent peers
 gent peers --json
 gent peers --discover
 gent connect USER@HOST --name laptop
-gent connect USER@HOST --name laptop --path /absolute/path/to/vma-gents --node /absolute/path/to/node
+gent connect USER@HOST --name laptop --path /absolute/path/to/o-gents --node /absolute/path/to/node
 gent task "Run uname -m and report the result" --on rack
 gent chat --on rack
 gent disconnect laptop
@@ -345,7 +348,7 @@ that every named deliverable was saved correctly.
 | Slow inference | `OVM_MODEL_TIMEOUT_SECONDS=300 gent chat --resume ID` |
 | Optional distribution unavailable | `gent mode auto` or a new `gent task "..." --local` |
 | Need disconnected guest | `gent task "..." --isolated` |
-| Remote result uncertain | Resume the same ID and let VMAgents reconcile the original dispatch; do not make an independent replay. |
+| Remote result uncertain | Resume the same ID and let o-gents reconcile the original dispatch; do not make an independent replay. |
 | Want to copy a gent | End its active turn, then `gent clone ID NEW_ID`. |
 
 Task exit 0 means its runtime completion checks passed; exit 2 means unfinished
@@ -649,7 +652,7 @@ For normal gent work use `gent task "your task"` with explicit placement options
 
 ## 9. Developer/package commands
 
-These run from the VMAgents checkout. They do not require you to write JavaScript:
+These run from the o-gents checkout. They do not require you to write JavaScript:
 
 | Command | Purpose |
 | --- | --- |

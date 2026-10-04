@@ -1,6 +1,6 @@
-# VMAgents
+# o-gents
 
-**Autonomous agents with a VM of their own.**
+**Autonomous gents with a VM of their own, native Ostadix checks, and peer reruns.**
 
 A **gent** is an autonomous agent with its own persistent Linux VM, local model,
 and portable state; a team contains multiple **gents**.
@@ -8,7 +8,15 @@ Use `gent` for daily commands. The older `ovm` command and nested forms such as
 `ovm agent list` remain compatible aliases. Technical `OVM_*` settings, guest
 paths, and the `.ovm` capsule format retain their existing names.
 
-VMAgents runs Ollama-backed gents in private, persistent ARM64 Linux VMs. Everyday
+Gents can submit exact `.O` source through a structured Ostadix action, inspect
+native diagnostics, and execute it against explicit output checks. A successful
+run publishes its source and check contract; another gent can read the retained
+execution and rerun the same contract in its own VM. Producer completion waits
+for that peer review. These receipts establish the recorded checks, not overall
+program or mission correctness. See the [Ostadix action and peer-review guide](docs/ostadix-agent-control.md)
+and [two-gent example](examples/ostadix-peer-review.json).
+
+o-gents runs Ollama-backed gents in private, persistent ARM64 Linux VMs. Everyday
 commands keep local work available, add trusted compatible VM hosts when useful,
 and save gents with their files, history and model weights. The separate
 OpenCode/MCP path can inspect, boot, read the console, run a bounded diagnostic,
@@ -39,7 +47,7 @@ including recovered pseudo-C and a native API atlas. That research and
 `examples/verified_neuro_decompilations.jsonl` are excluded from the product
 repository and npm package; a fresh clone does not include them.
 
-VMAgents can now use qualified copies of `claude-native-binding.node` and
+o-gents can now use qualified copies of `claude-native-binding.node` and
 `computer_use.node` through an isolated capability broker. The active gent
 swarm pairs each local Ollama session with a private persistent VM,
 delivers typed peer messages between pockets, and permits bounded child-pocket
@@ -51,7 +59,7 @@ The application is JavaScript (`src/*.mjs`) executed directly by Node.js 26+.
 The `bin/gent` launcher runs the appropriate modules. `index.ts` is a standalone
 TypeScript demo, not the application entrypoint. No `tsc` or `npm run build`
 step is needed. See [the step-by-step setup and run guide](docs/getting-started.md).
-The [complete command reference](docs/command-reference.md) includes every VMAgents
+The [complete command reference](docs/command-reference.md) includes every o-gents
 command group, aliases, options, portable-gent workflows, and advanced limits.
 
 The default local model is **huihui-ai/Huihui-Spark-X2.5-4B-abliterated**, using
@@ -83,8 +91,9 @@ this default route; `--text` selects the plain model route. Task/chat options
 work before or after the quoted request.
 
 `gent task` starts one gent and prints live progress and captured guest output
-as commands complete. Results are also saved in the task transcript. `--agents N` requests a
-team capped at N; optional `--max-agents N` permits additional child gents.
+as commands complete. Results are also saved in the task transcript. A new task
+has room for a second gent if its work needs a peer checker. `--agents 3` starts
+and caps the team at three; `--max-agents N` explicitly sets the total cap.
 The advanced `gent swarm` command retains its existing defaults. The `check`
 command reports model availability, task prerequisites, and the separate
 normal VM startup policy, including disk and memory limits. It also reads the
@@ -109,8 +118,9 @@ to read its receipt, or `gent guests check` to boot a fresh copy and rerun the
 checks. These guest tools are distinct from the JavaScript host launcher,
 which needs no compilation.
 
-VMAgents is the Node/VM host application. Ostadix is one bundled guest capability;
-basic `gent` use does not require a host Ostadix installation. The optional host
+o-gents is the Node/VM host application. Its structured code actions delegate
+checking and source-bound execution to Ostadix inside each guest; basic `gent`
+use does not require a host Ostadix installation. The optional host
 `.O` examples and native-node passthrough have their own Ostadix prerequisites.
 
 Use `--source guest:/absolute/path` to select the input explicitly. A new family
@@ -141,7 +151,7 @@ gent disconnect laptop                 # Remove future placement on this host
 Prepare the destination and establish SSH access before connecting: Apple
 Silicon hosts can run `gent setup`; Linux/QEMU hosts need the QEMU tools and a
 transferred verified guest. Both need Node 26+ and rsync. For a nonstandard
-installation, add `--path /absolute/path/to/vma-gents`; use
+installation, add `--path /absolute/path/to/o-gents`; use
 `--node /absolute/path/to/node` when Node 26+ is installed privately.
 Connect verifies the remote
 controller and enrolls it in the shared network over SSH; it preserves the
@@ -160,7 +170,7 @@ All communicating pockets and descendants in a family stay on one controller.
 Independent families may use different hosts. Model inference and enabled
 native host actions stay on the initiating machine. Remote rounds create local
 stopped-disk checkpoints. If a dispatched command's result becomes uncertain,
-VMAgents saves it and `gent resume ID` queries the original operation; it never
+o-gents saves it and `gent resume ID` queries the original operation; it never
 blindly replays that command locally. Existing local families stay with their
 files unless explicitly exported/imported on another host.
 
@@ -188,7 +198,7 @@ gent show GENT_ID
 gent resume GENT_ID --mission "Continue the work"
 gent clone GENT_ID my-copy
 gent export GENT_ID ~/my-agent.ovm
-# On an already compatible VMAgents host:
+# On an already compatible o-gents host:
 gent import ~/my-agent.ovm my-imported-agent
 gent resume my-imported-agent --local
 ```
@@ -196,7 +206,7 @@ gent resume my-imported-agent --local
 Replace `GENT_ID` with a saved ID; stop the gent before cloning or exporting.
 A `.ovm` capsule always includes the complete model weights, guest files, boot
 inputs, and history. Import creates a distinct instance while preserving its
-lineage. The destination needs VMAgents, Node 26+, a model-compatible Ollama server,
+lineage. The destination needs o-gents, Node 26+, a model-compatible Ollama server,
 and either Apple Silicon macOS or the QEMU tools on Linux/macOS. The capsule
 supplies its matching guest base and boot inputs; it does not transfer running
 VM memory or convert the ARM64 guest to another architecture. It retains
@@ -343,7 +353,7 @@ on the host; Linux effects remain in the pocket's VM rootfs. Pocket manifests,
 messages, observations, and rootfs images live under `vm/pockets/`.
 
 Native keyboard, pointer, window, and application actions are present in the
-catalog but disabled unless the owner starts VMAgents with
+catalog but disabled unless the owner starts o-gents with
 `OVM_NATIVE_ALLOW_ACT=1`. Changed addon hashes are refused unless separately
 qualified or explicitly allowed with `OVM_NATIVE_ALLOW_UNQUALIFIED=1`.
 
@@ -424,14 +434,14 @@ Do not redistribute Claude's disk image, guest software, or helper image. This i
 
 ## Install on another Mac
 
-With access to the private `lostadi/vma-gents` repository, clone it to any physical
+With access to the private `lostadi/o-gents` repository, clone it to any physical
 path. The scripts derive the project root
 from their own location, so the checkout does not need Lee's username or
 directory layout.
 
 ```zsh
-git clone git@github.com:lostadi/vma-gents.git
-cd vma-gents
+git clone git@github.com:lostadi/o-gents.git
+cd o-gents
 ./bin/gent setup
 npm test
 gent check
@@ -450,7 +460,7 @@ when they are stored elsewhere:
 `install-native-capabilities.zsh` finds the two qualified decoded native
 add-ons in an extracted Claude tree or installed Claude Desktop, verifies their
 cataloged hashes, and copies them into the ignored `host/native-root/` store.
-VMAgents then uses this stable private copy instead of depending on the original
+o-gents then uses this stable private copy instead of depending on the original
 extraction directory. Override discovery with `OVM_CLAUDE_EXTRACTED_ROOT`.
 
 ```zsh

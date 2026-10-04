@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "vma-gents",
+      "name": "o-gents",
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.30.0",
         "zod": "4.4.3",

@@ -85,8 +85,8 @@ export function controllerCommand(peer) {
     if (!peer.root.startsWith('/') || /[\0\r\n]/.test(peer.root)) throw new Error('Remote checkout must be an absolute path.');
     return `${prefix}exec ${node} ${shellQuote(`${peer.root}/bin/ovm`)} worker`;
   }
-  if (peer.nodePath !== undefined) return `${prefix}if [ -f "$HOME/.local/bin/ovm" ]; then exec ${node} "$HOME/.local/bin/ovm" worker; elif [ -f "$HOME/vma-gents/bin/ovm" ]; then exec ${node} "$HOME/vma-gents/bin/ovm" worker; elif [ -f "$HOME/claude-vm-mcp/bin/ovm" ]; then exec ${node} "$HOME/claude-vm-mcp/bin/ovm" worker; else echo 'VMAgents is not installed on this machine. Use --path for its remote checkout.' >&2; exit 127; fi`;
-  return `${prefix}if [ -x "$HOME/.local/bin/ovm" ]; then exec "$HOME/.local/bin/ovm" worker; elif [ -f "$HOME/vma-gents/bin/ovm" ]; then exec node "$HOME/vma-gents/bin/ovm" worker; elif [ -f "$HOME/claude-vm-mcp/bin/ovm" ]; then exec node "$HOME/claude-vm-mcp/bin/ovm" worker; else echo 'VMAgents is not installed on this machine. Install its host adapter first.' >&2; exit 127; fi`;
+  if (peer.nodePath !== undefined) return `${prefix}if [ -f "$HOME/.local/bin/ovm" ]; then exec ${node} "$HOME/.local/bin/ovm" worker; elif [ -f "$HOME/o-gents/bin/ovm" ]; then exec ${node} "$HOME/o-gents/bin/ovm" worker; elif [ -f "$HOME/vma-gents/bin/ovm" ]; then exec ${node} "$HOME/vma-gents/bin/ovm" worker; elif [ -f "$HOME/claude-vm-mcp/bin/ovm" ]; then exec ${node} "$HOME/claude-vm-mcp/bin/ovm" worker; else echo 'o-gents is not installed on this machine. Use --path for its remote checkout.' >&2; exit 127; fi`;
+  return `${prefix}if [ -x "$HOME/.local/bin/ovm" ]; then exec "$HOME/.local/bin/ovm" worker; elif [ -f "$HOME/o-gents/bin/ovm" ]; then exec node "$HOME/o-gents/bin/ovm" worker; elif [ -f "$HOME/vma-gents/bin/ovm" ]; then exec node "$HOME/vma-gents/bin/ovm" worker; elif [ -f "$HOME/claude-vm-mcp/bin/ovm" ]; then exec node "$HOME/claude-vm-mcp/bin/ovm" worker; else echo 'o-gents is not installed on this machine. Install its host adapter first.' >&2; exit 127; fi`;
 }
 
 export async function controllerCall(peer, request, { timeout = 8_000, execute = runCaptured } = {}) {

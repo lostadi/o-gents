@@ -103,8 +103,8 @@ export function validateEndpoint(endpoint) {
 }
 
 function validateDescriptor(network) {
-  if (network?.schema !== "ovm-network-v1" || !/^[a-f0-9]{32}$/.test(network.networkId)) throw new Error("Invalid VMAgents network descriptor.");
-  if (network.subnet !== "10.87.0.0/16" || network.lighthouseIp !== "10.87.0.1") throw new Error("Unsupported VMAgents network address range.");
+  if (network?.schema !== "ovm-network-v1" || !/^[a-f0-9]{32}$/.test(network.networkId)) throw new Error("Invalid o-gents network descriptor.");
+  if (network.subnet !== "10.87.0.0/16" || network.lighthouseIp !== "10.87.0.1") throw new Error("Unsupported o-gents network address range.");
   validateEndpoint(network.endpoint);
   if (!Number.isInteger(network.controllerBlock) || network.controllerBlock < 1 || network.controllerBlock > 254) throw new Error("Invalid controller address block.");
   if (typeof network.controllerId !== "string" || !/^[a-f0-9]{32}$/.test(network.controllerId)) throw new Error("Invalid controller identity.");
@@ -176,7 +176,7 @@ export function nebulaConfiguration({ network, directory = "/run/ovm-config", li
 async function selectedNetwork(options = {}) {
   const root = statePath(options);
   const networkId = options.networkId ?? (await readFile(path.join(root, "current"), "utf8")).trim();
-  if (!/^[a-f0-9]{32}$/.test(networkId)) throw new Error("Invalid VMAgents network ID.");
+  if (!/^[a-f0-9]{32}$/.test(networkId)) throw new Error("Invalid o-gents network ID.");
   const networkDir = path.join(root, networkId);
   const network = validateDescriptor(await readJson(path.join(networkDir, "network.json")));
   return { ...network, networkDir, stateRoot: root };
@@ -337,7 +337,7 @@ export async function joinNetwork(options) {
   const root = statePath(options);
   const tools = await installNebulaTools(options);
   return locked(root, async () => {
-    if (existsSync(path.join(root, "current"))) throw new Error("This VMAgents installation already has a network. Use a separate OVM_NETWORK_STATE directory to join another network.");
+    if (existsSync(path.join(root, "current"))) throw new Error("This o-gents installation already has a network. Use a separate OVM_NETWORK_STATE directory to join another network.");
     const directory = path.join(root, network.networkId);
     if (existsSync(directory)) throw new Error("Network identity directory already exists; refusing to overwrite it.");
     await mkdir(directory, { mode: 0o700 });

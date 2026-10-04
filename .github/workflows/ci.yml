@@ -1,4 +1,4 @@
-name: VMAgents checks
+name: o-gents checks
 
 on:
   push:

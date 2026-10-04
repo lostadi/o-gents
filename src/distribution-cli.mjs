@@ -13,7 +13,7 @@ export const distributionHelp = `Control where your gents run:
   gent peers                        Show connected hosts and their availability
   gent peers --discover             Also list machines visible through Tailscale
   gent connect HOST [--name NAME] [--path PATH] [--node NODE]
-                                   Connect a trusted VMAgents host over existing SSH;
+                                   Connect a trusted o-gents host over existing SSH;
                                    PATH and private Node 26+ NODE must be absolute
   gent disconnect NAME              Remove a host from automatic placement
   gent task "your task" --local      Override placement for one task
@@ -63,7 +63,7 @@ export async function runDistributionCommand(command, argv, {
       await saveDistributionSettings(projectRoot, settings, environment);
     }
     if (json) print({ mode: settings.mode });
-    else output.write(`VMAgents mode: ${settings.mode}\n${settings.mode === 'auto' ? 'Local execution stays available; connected compatible hosts add capacity.' : settings.mode === 'local' ? 'Gents stay on this machine. Internet access and local VM concurrency remain enabled.' : 'Gent tasks require a compatible remote VM controller and shared mesh.'}\n`);
+    else output.write(`o-gents mode: ${settings.mode}\n${settings.mode === 'auto' ? 'Local execution stays available; connected compatible hosts add capacity.' : settings.mode === 'local' ? 'Gents stay on this machine. Internet access and local VM concurrency remain enabled.' : 'Gent tasks require a compatible remote VM controller and shared mesh.'}\n`);
     return 0;
   }
   if (command === 'disconnect') {
@@ -111,10 +111,10 @@ export async function runDistributionCommand(command, argv, {
   if (previous && previous.host !== host) throw new Error(`${name} already refers to ${previous.host}; choose another --name.`);
   const nodePath = parsed.values.has('--node') ? validateControllerNodePath(parsed.values.get('--node')) : previous?.nodePath;
   const peer = { name, host, ...(root ? { root } : previous?.root ? { root: previous.root } : {}), ...(nodePath === undefined ? {} : { nodePath }) };
-  if (!json) progress.write(`Checking VMAgents on ${host}…\n`);
+  if (!json) progress.write(`Checking o-gents on ${host}…\n`);
   let probe;
   try { probe = await call(peer, { op: 'probe' }); }
-  catch (error) { throw new Error(`Cannot connect to VMAgents on ${host}: ${error.message}\nVerify ssh ${host} works and VMAgents is installed there. Use --path for a nonstandard checkout and --node for a private Node 26+ interpreter.`); }
+  catch (error) { throw new Error(`Cannot connect to o-gents on ${host}: ${error.message}\nVerify ssh ${host} works and o-gents is installed there. Use --path for a nonstandard checkout and --node for a private Node 26+ interpreter.`); }
   if (probe.vmReady !== true) throw new Error(`${host} is reachable, but its VM controller is not ready: ${(probe.blockers ?? []).join('; ') || probe.reason || `${probe.platform}/${probe.architecture}`}. Run gent check --backend ${probe.backend === 'qemu-arm64' || probe.platform === 'linux' ? 'qemu' : 'auto'} on that host; provide Node 26+, rsync, the selected backend's tools, and a verified prepared ARM64 guest.`);
   if (typeof probe.root !== 'string' || !path.isAbsolute(probe.root) || /[\0\r\n]/.test(probe.root)) throw new Error('Remote controller returned an invalid checkout path.');
   peer.root = probe.root;

@@ -109,7 +109,7 @@ export function createSwarmReporter({ output = process.stdout, progress = proces
         progress.write(`${prefix} ${task.agentId}: running in Linux: ${task.command.replace(/\s+/g, " ").slice(0, 160)}\n`);
       }
     } else if (event.type === "vm-result") {
-      progress.write(`${prefix} ${event.agentId}: ${event.error ? `VM failed: ${event.error}` : `guest command exited ${event.exitCode ?? "unknown"}`}\n`);
+      progress.write(`${prefix} ${event.agentId}: ${event.error ? `VM failed: ${event.error}` : event.ostadixStatus ? `Ostadix ${event.ostadixStatus}${event.peerStatus ? `; ${event.peerStatus}` : ""}` : `guest command exited ${event.exitCode ?? "unknown"}`}\n`);
       const captured = typeof event.output === "string" && event.output.length > 0
         ? event.output : "(no guest output)\n";
       output.write(`\n--- ${event.agentId}: guest output (round ${event.round}) ---\n${captured}${captured.endsWith("\n") ? "" : "\n"}`);
@@ -269,7 +269,7 @@ export async function runSwarmCli(argv, { output = process.stdout, progress = pr
   }
   if (json) output.write(`${JSON.stringify(result)}\n`);
   else {
-    output.write(`VMAgents swarm ${result.swarmId}\n`);
+    output.write(`o-gents swarm ${result.swarmId}\n`);
     output.write(`Mission: ${result.mission}\n`);
     output.write(`Rounds: ${result.rounds}; ${result.waitingForUser ? "waiting for your next message" : result.completed ? "all gents finished" : result.blocked ? "paused awaiting result reconciliation" : "round limit reached with unfinished work"}\n`);
     for (const reply of result.lastReplies ?? []) {
@@ -284,6 +284,7 @@ export async function runSwarmCli(argv, { output = process.stdout, progress = pr
       output.write(`  Evidence checks: ${agent.verification?.status === "checks-passed" ? `${checks.length} explicit assertions passed` : "unverified"}.\n`);
     }
     output.write("Gent completion and passed assertions do not establish overall mission correctness.\n");
+    for (const artifact of result.programArtifacts ?? []) output.write(`Code ${artifact.name}: ${artifact.peerVerification.status} (${artifact.id})\n`);
     output.write(`State: ${result.statePath}\n`);
     output.write(formatSwarmReview(result.transcript));
   }

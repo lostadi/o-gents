@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * VMAgents compatibility entry point.
+ * o-gents compatibility entry point.
  * Existing ovm routes and internal protocols remain available behind gent.
  */
 
@@ -64,7 +64,7 @@ async function vmNetworkArguments(passArgs, guestId) {
   const distributionMode = validateDistributionMode(remaining.includes("--local") ? "local" : distributionIndex >= 0 ? remaining[distributionIndex + 1] : process.env.OVM_DISTRIBUTION_MODE);
   const forwarded = remaining.filter((arg, index) => arg !== "--local" && (distributionIndex < 0 || (index !== distributionIndex && index !== distributionIndex + 1)));
   const prepared = await prepareLaunchNetwork({ projectRoot, guestId, distributionMode, networkMode: mode });
-  if (prepared.fallbackReason) process.stderr.write(`VMAgents: local network fallback — ${prepared.fallbackReason}\n`);
+  if (prepared.fallbackReason) process.stderr.write(`o-gents: local network fallback — ${prepared.fallbackReason}\n`);
   return ["--network", mode, "--distribution", distributionMode, ...(prepared.shareDir ? ["--network-share", prepared.shareDir] : []), ...forwarded];
 }
 
@@ -84,7 +84,7 @@ const c = {
 function banner() {
   console.log(`
 ${c.cyan}${c.bold}  ╭────────────────────────────────────────────────────────╮
-  │       ${c.magenta}VMAgents${c.cyan} · autonomous gents with persistent VMs      │
+  │       ${c.magenta}o-gents${c.cyan} · autonomous gents with persistent VMs      │
   │       Apple Virtualization / QEMU · Connected Linux    │
   ╰────────────────────────────────────────────────────────╯${c.reset}
 `);

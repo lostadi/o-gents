@@ -48,11 +48,11 @@ test("help for every flat saved-gent command cannot launch or mutate an agent", 
   assert.deepEqual(forwarded.slice(1), ["agent", "resume", "saved", "--", "--help"]);
 });
 
-test("gent and legacy ovm entry points expose the VMAgents help without booting", async () => {
+test("gent and legacy ovm entry points expose the o-gents help without booting", async () => {
   for (const executable of ["gent", "ovm"]) {
     const { stdout, stderr } = await execute(process.execPath, [path.join(root, "bin", executable), "--help"], { timeout: 10_000 });
     assert.equal(stderr, "");
-    assert.match(stdout, /^VMAgents/);
+    assert.match(stdout, /^o-gents/);
     assert.match(stdout, /gent show ID/);
     assert.match(stdout, /gent resume ID/);
     assert.match(stdout, /ovm commands remain available/);

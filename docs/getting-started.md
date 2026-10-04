@@ -1,9 +1,9 @@
-# VMAgents setup and everyday commands
+# o-gents setup and everyday commands
 
 For every command, alias, option, and complete usage examples, see the
 [complete command reference](command-reference.md).
 
-VMAgents runs directly with Node.js. You do not need to compile JavaScript or
+o-gents runs directly with Node.js. You do not need to compile JavaScript or
 TypeScript. Paste these commands into Terminal or Warp. On Lee's Mac the
 checkout is `/Users/ustad/claude-vm-mcp`; the installed `gent` shortcut works from
 any directory. If the shortcut is missing, use `./bin/gent` from that checkout.
@@ -59,11 +59,20 @@ gent task "Your task" --dry-run
 ```
 
 Task/chat options may appear before or after the quoted request. `gent task`
-starts one gent by default; `--agents 3` starts and caps the team at three.
-`--max-agents N` separately permits child gents. Task rounds default to four.
+starts one gent by default with a total cap of two, leaving room for a peer
+checker when needed. `--agents 3` starts and caps the team at three.
+`--max-agents N` explicitly sets the total cap, including child gents;
+`--max-agents 1` keeps a single gent and cannot satisfy a distinct-peer review.
+Saved tasks retain their cap unless you override it. Task rounds default to four.
 An unfinished round-limited task preserves its state so it can be resumed.
 `--dry-run` inspects the plan without inference or VM execution. `--json` emits
 machine-readable results instead of human progress and output.
+
+Structured Ostadix code runs can publish exact source and have a distinct gent
+rerun its original checks. The controller can create that reviewer within the
+cap or reactivate a finished peer. See [Ostadix actions and peer review](ostadix-agent-control.md)
+for the action format, evidence, and completion rules. Ordinary VM commands and
+chat do not require peer review.
 
 Use `gent help`, `gent chat --help`, and `gent task --help` for commands. Guest
 programs run inside Linux. Native host observations have separate names such
@@ -78,7 +87,7 @@ gent task "Inspect this guest history source. Preserve the actual records and re
 gent chat --source guest:/root/input.txt "Inspect this source before working from it"
 ```
 
-`--source guest:/absolute/path` binds an input in the gent's guest. VMAgents inspects
+`--source guest:/absolute/path` binds an input in the gent's guest. o-gents inspects
 that path before the first reasoning step of a new family and records a scoped
 fact: present, absent, unreadable, or not a regular file. A missing guest file
 does not mean the corresponding host file or another pocket's file is absent.
@@ -157,7 +166,7 @@ gent task "Run uname -m and report the observed result" --on laptop
 gent disconnect laptop
 ```
 
-For a nonstandard installation, add `--path /absolute/path/to/vma-gents`.
+For a nonstandard installation, add `--path /absolute/path/to/o-gents`.
 If Node 26+ is installed privately on that host, select its exact interpreter:
 
 ```zsh
@@ -174,7 +183,7 @@ revoke existing certificates or stop guests. Enrollment itself does not install
 the VM engine or guest image.
 
 Completed remote rounds create stopped-disk checkpoints on the initiating Mac.
-If acknowledgement is lost, VMAgents retains the original dispatch and queries it on
+If acknowledgement is lost, o-gents retains the original dispatch and queries it on
 resume; it does not replay uncertain work locally. `--local` does not bypass an
 unresolved dispatch. Modern rsync improves checkpoint transfers. Setup attempts
 an optional Homebrew rsync install when distribution is enabled and the
@@ -194,7 +203,7 @@ Sending a filename does not transfer it. The handoff budget is 256 KiB per file,
 64 blobs and 2 MiB per family; ordinary files in private VM disks are outside
 that small-artifact limit.
 
-If a decision includes a VM command and publication, VMAgents runs the command and
+If a decision includes a VM command and publication, o-gents runs the command and
 queues publication for a later controller-managed round only after that command
 succeeds. It does not rerun the command to publish. Requests and hypotheses can
 be sent alongside work as unverified intent. Reports about newly requested work
@@ -246,9 +255,9 @@ Add `--private-model` to `gent import FILE.ovm ID` to retain complete weights
 with that gent without publishing them into the host's Ollama store. Import
 does not start or qualify a model server. Follow the [private-model server
 commands](agent-capsule-format.md#run-an-imported-private-model) to start it on a
-separate loopback port and point VMAgents at that server.
+separate loopback port and point o-gents at that server.
 
-The destination needs VMAgents, Node 26+, a model-compatible Ollama server, and
+The destination needs o-gents, Node 26+, a model-compatible Ollama server, and
 either Apple Silicon macOS or QEMU tools on Linux/macOS. An imported capsule
 uses its own matching ARM64 guest base/profile; incompatible custom profiles
 are refused. It supplies guest inputs and weights, not the host VM engine or
@@ -292,7 +301,7 @@ checks; the last image reported a missing `nixbld` build-users group.
 
 Guest Ostadix is at `/opt/ostadix`, with backends at `/opt/ostadix/backends`.
 `/etc/ovm/mcp.json` configures its stdio MCP server for a client inside the guest.
-The host `npm run mcp` server controls VMAgents; it is a separate server and waits
+The host `npm run mcp` server controls o-gents; it is a separate server and waits
 for an MCP client. For client configuration, use `bin/claude-vm-mcp` directly
 to avoid package-manager banners on protocol output. See the
 [OpenCode integration](../integrations/opencode/README.md).
@@ -321,8 +330,8 @@ With access to the private repository, clone the source without any host's
 private `runtime/` and `vm/` state:
 
 ```zsh
-git clone git@github.com:lostadi/vma-gents.git
-cd vma-gents
+git clone git@github.com:lostadi/o-gents.git
+cd o-gents
 ./bin/gent setup
 ./bin/gent check
 gent chat "Run uname -m and report its output"
@@ -333,7 +342,7 @@ inputs must match the qualified profile in [compatibility](../compatibility/READ
 An existing bundle is not recloned. Optional Swift rebuilding uses
 `npm run build:native` and Xcode Command Line Tools. Daily use needs no
 TypeScript or JavaScript compilation; Node executes `.mjs` directly. `index.ts`
-is a separate demonstration and is not VMAgents's entrypoint.
+is a separate demonstration and is not o-gents's entrypoint.
 
 Ostadix and its MCP are bundled guest capabilities. The host application needs
 Node and its selected VM backend; ordinary `gent` use does not depend on a host
@@ -347,7 +356,7 @@ listed above. Copy the source checkout and your private `.ovm` capsule to the
 destination. With Node 26+ on PATH and Ollama running:
 
 ```bash
-cd /absolute/path/to/vma-gents
+cd /absolute/path/to/o-gents
 node --version
 npm ci
 ./bin/gent import ~/my-agent.ovm my-imported-agent

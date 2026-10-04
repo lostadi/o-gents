@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { normalizeOstadixAction } from "./ostadix-control.mjs";
 
 export const SWARM_PROTOCOL = "ovm.agent-pocket/v1";
 export const MAX_AGENT_ACTIONS = 8;
@@ -40,6 +41,12 @@ function boundedString(value, name, maximumBytes, { optional = false } = {}) {
 function validateAction(action, peers, nativeOperations, { interactive = false } = {}) {
   if (!action || typeof action !== "object" || Array.isArray(action)) throw new Error("each action must be an object");
   switch (action.type) {
+    case "ostadix":
+      return Object.freeze(normalizeOstadixAction(action));
+    case "read_execution":
+      return Object.freeze({ type: "read_execution", evidenceId: boundedString(action.evidenceId, "execution evidence ID", 256) });
+    case "review_artifact":
+      return Object.freeze({ type: "review_artifact", artifactId: boundedString(action.artifactId, "code artifact ID", 256) });
     case "vm":
       return Object.freeze({
         type: "vm",
@@ -105,9 +112,11 @@ function evidenceReferences(value = []) {
 function assertions(value = []) {
   if (!Array.isArray(value) || value.length > 16) throw new Error("assertions must contain up to 16 explicit checks");
   return Object.freeze(value.map((item) => {
-    if (!item || !["stdout_contains", "stdout_equals", "exit_code", "native_value_equals", "artifact_sha256", "source_kind"].includes(item.kind)) throw new Error("unsupported assertion kind");
+    if (!item || !["stdout_contains", "stdout_equals", "exit_code", "native_value_equals", "artifact_sha256", "source_kind", "ostadix_checks_passed", "peer_review_passed"].includes(item.kind)) throw new Error("unsupported assertion kind");
     const evidenceId = boundedString(item.evidenceId, "assertion evidence ID", 256);
-    if (item.kind === "exit_code") {
+    if (["ostadix_checks_passed", "peer_review_passed"].includes(item.kind)) {
+      if (item.expected !== true) throw new Error("execution verification assertion expected value must be true");
+    } else if (item.kind === "exit_code") {
       if (!Number.isInteger(item.expected) || item.expected < 0 || item.expected > 255) throw new Error("exit_code assertion expected value must be 0–255");
     } else if (item.kind === "native_value_equals") {
       if (item.expected === undefined || Buffer.byteLength(JSON.stringify(item.expected)) > 8192) throw new Error("native value assertion requires a bounded expected JSON value");
@@ -156,14 +165,14 @@ export function parseAgentDecision(text, {
     }
     catch (error) { repairs.push({ dropped: action?.type ?? "invalid", index, reason: "invalid-action", detail: error.message }); }
   }
-  const firstVm = validated.find(({ action }) => action.type === "vm");
+  const firstVm = validated.find(({ action }) => ["vm", "ostadix", "review_artifact"].includes(action.type));
   const selectedGuest = firstVm ?? validated.find(({ action }) => ["publish", "inspect_source"].includes(action.type));
   const projected = [], queuedActions = [];
   let nativeCount = 0;
   for (const item of validated) {
     const { action, index } = item;
-    if (["vm", "publish", "inspect_source"].includes(action.type) && item !== selectedGuest) {
-      if (firstVm && action.type === "publish" && !queuedActions.length) {
+    if (["vm", "ostadix", "review_artifact", "publish", "inspect_source"].includes(action.type) && item !== selectedGuest) {
+      if (firstVm?.action.type === "vm" && action.type === "publish" && !queuedActions.length) {
         queuedActions.push({ action, requires: "vm-success" });
         repairs.push({ dropped: "publish", index, reason: "cardinality", detail: "Publication queued after the selected VM command is observed", queuedAgainst: "this-turn-vm" });
       } else repairs.push({ dropped: action.type, index, reason: "cardinality", detail: "Only the first valid VM operation is executed; additional commands are not replayed automatically" });

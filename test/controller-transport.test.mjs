@@ -28,13 +28,17 @@ test('private remote Node paths remain literal through the SSH shell command', a
   assert.match(controllerCommand({ nodePath }), /-f "\$HOME\/\.local\/bin\/ovm"/);
 });
 
-test('default controller discovery finds a vma-gents checkout and retains the legacy checkout fallback', async t => {
+test('default controller discovery prefers o-gents and retains both previous checkout fallbacks', async t => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'gent-controller-home-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  for (const checkout of ['vma-gents', 'claude-vm-mcp']) {
+  const checkouts = ['o-gents', 'vma-gents', 'claude-vm-mcp'];
+  for (const checkout of checkouts) {
     const entrypoint = path.join(directory, checkout, 'bin/ovm');
     await mkdir(path.dirname(entrypoint), { recursive: true });
     await writeFile(entrypoint, 'console.log(JSON.stringify(process.argv.slice(1)))');
+  }
+  for (const checkout of checkouts) {
+    const entrypoint = path.join(directory, checkout, 'bin/ovm');
     for (const peer of [{}, { nodePath: process.execPath }]) {
       const command = controllerCommand(peer).replaceAll('$HOME', '$OVM_TEST_HOME');
       const result = await runCaptured('/bin/sh', ['-c', command], { env: { ...process.env, OVM_TEST_HOME: directory } });

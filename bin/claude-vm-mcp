@@ -27,7 +27,7 @@ export CLAUDE_VM_POLICY=${CLAUDE_VM_POLICY:-"$project_root/policy.json"}
 export CLAUDE_VM_RUNNER=${CLAUDE_VM_RUNNER:-"$runner"}
 
 if [[ -t 0 ]]; then
-  print -u2 "VMAgents MCP server: waiting for client protocol messages. For chat, press Ctrl+C and run: gent chat"
+  print -u2 "o-gents MCP server: waiting for client protocol messages. For chat, press Ctrl+C and run: gent chat"
 fi
 
 exec "$node" "$project_root/src/server.mjs"

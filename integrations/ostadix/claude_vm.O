@@ -12,7 +12,7 @@ import subprocess
 import time
 
 home = Path.home()
-default_project = home / "vma-gents" if (home / "vma-gents").is_dir() else home / "claude-vm-mcp"
+default_project = home / "o-gents" if (home / "o-gents").is_dir() else home / "vma-gents" if (home / "vma-gents").is_dir() else home / "claude-vm-mcp"
 project = Path(os.environ.get("CLAUDE_VM_ROOT", default_project)).expanduser().resolve()
 source = Path(os.environ.get(
     "CLAUDE_VM_SOURCE_BUNDLE",

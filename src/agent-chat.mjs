@@ -39,7 +39,7 @@ export async function runAgentChat(argv, { root, run, output = process.stdout, p
     return code;
   };
   if (mission) return turn(mission);
-  progress.write(`VMAgents chat: ${id}\nThis gent can execute commands in its persistent Linux VM.\n/bye exits; /status shows its saved state; /help lists commands.\nUse gent chat --text for conversation without execution.\n`);
+  progress.write(`o-gents chat: ${id}\nThis gent can execute commands in its persistent Linux VM.\n/bye exits; /status shows its saved state; /help lists commands.\nUse gent chat --text for conversation without execution.\n`);
   const terminal = Boolean(input.isTTY && output.isTTY);
   const lines = createLines({ input, output: terminal ? output : undefined, terminal });
   // Readline consumes Ctrl+C in raw terminal mode. Forward it through the same

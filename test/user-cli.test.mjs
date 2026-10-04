@@ -16,7 +16,7 @@ const runningNetwork = async () => ({ configured: true, localLighthouse: true, r
 
 test("task forwards an exact mission without host shell interpolation and starts only one agent", () => {
   const mission = 'Print "$HOME"; $(touch do-not-create) and words with spaces';
-  assert.deepEqual(taskArguments([mission]), ["--mission", mission, "--agents", "1", "--max-agents", "1"]);
+  assert.deepEqual(taskArguments([mission]), ["--mission", mission, "--agents", "1", "--max-agents", "2"]);
 });
 
 test("task permits multiple initial agents without implicit spreading and preserves explicit flags", () => {
@@ -25,14 +25,14 @@ test("task permits multiple initial agents without implicit spreading and preser
 });
 
 test("task accepts flags before the quoted mission and binds an explicit guest source", () => {
-  assert.deepEqual(taskArguments(["--local", "--allow-native-act", "map the loopback interface"]), ["--mission", "map the loopback interface", "--local", "--allow-native-act", "--agents", "1", "--max-agents", "1"]);
-  assert.deepEqual(taskArguments(["--source", "guest:/root/.bash_history", "inspect this source", "--rounds", "5"]), ["--mission", "inspect this source", "--source", "guest:/root/.bash_history", "--rounds", "5", "--agents", "1", "--max-agents", "1"]);
+  assert.deepEqual(taskArguments(["--local", "--allow-native-act", "map the loopback interface"]), ["--mission", "map the loopback interface", "--local", "--allow-native-act", "--agents", "1", "--max-agents", "2"]);
+  assert.deepEqual(taskArguments(["--source", "guest:/root/.bash_history", "inspect this source", "--rounds", "5"]), ["--mission", "inspect this source", "--source", "guest:/root/.bash_history", "--rounds", "5", "--agents", "1", "--max-agents", "2"]);
 });
 
 test("task and VM chat accept backend selection anywhere before literal mission text", async () => {
-  assert.deepEqual(taskArguments(["--backend=qemu", "observe Linux"]), ["--mission", "observe Linux", "--backend", "qemu", "--agents", "1", "--max-agents", "1"]);
-  assert.deepEqual(taskArguments(["observe Linux", "--backend", "auto"]), ["--mission", "observe Linux", "--backend", "auto", "--agents", "1", "--max-agents", "1"]);
-  assert.deepEqual(taskArguments(["--", "--backend=qemu"]), ["--mission", "--backend=qemu", "--agents", "1", "--max-agents", "1"]);
+  assert.deepEqual(taskArguments(["--backend=qemu", "observe Linux"]), ["--mission", "observe Linux", "--backend", "qemu", "--agents", "1", "--max-agents", "2"]);
+  assert.deepEqual(taskArguments(["observe Linux", "--backend", "auto"]), ["--mission", "observe Linux", "--backend", "auto", "--agents", "1", "--max-agents", "2"]);
+  assert.deepEqual(taskArguments(["--", "--backend=qemu"]), ["--mission", "--backend=qemu", "--agents", "1", "--max-agents", "2"]);
   for (const flags of [["--backend", "bad"], ["--backend"], ["--backend", "apple", "--backend", "qemu"]]) assert.throws(() => taskArguments(["mission", ...flags]), /backend/);
   const calls = [];
   const options = { root: "/tmp/ovm", environment: { OVM_VM_BACKEND: "apple" }, run: async (...args) => { calls.push(args); return 0; } };
@@ -77,7 +77,7 @@ test("chat explains its interactive exit and task forwards JSON untouched", asyn
   const code = await runUserCommand("task", ["safe mission", "--json"], { root: "/tmp/ovm", run: async (...invocation) => { args = invocation; return 2; } });
   assert.equal(code, 2);
   assert.equal(args[2].cwd, process.cwd());
-  assert.deepEqual(args[1], ["/tmp/ovm/bin/ovm-pocket", "--mission", "safe mission", "--json", "--agents", "1", "--max-agents", "1"]);
+  assert.deepEqual(args[1], ["/tmp/ovm/bin/ovm-pocket", "--mission", "safe mission", "--json", "--agents", "1", "--max-agents", "2"]);
 });
 
 test("task isolation reaches descendants through the environment without changing agent caps", async () => {
@@ -317,7 +317,7 @@ test("setup preserves existing VM/native inputs and stops on dependency failure"
     assert.deepEqual(calls, [["npm", ["ci"]], ["npm", ["run", "model:setup"]]]);
     assert.equal(await readlink(path.join(root, "links/gent")), path.join(root, "bin/gent"));
     assert.equal(await readlink(path.join(root, "links/ovm")), path.join(root, "bin/ovm"));
-    assert.match(output.text, /VMAgents command:/);
+    assert.match(output.text, /o-gents command:/);
     assert.match(output.text, /Existing private VM bundle preserved/);
     calls.length = 0;
     assert.equal(await runSetup(root, { environment, output, run: async (file, args) => { calls.push([file, args]); return 9; } }), 9);

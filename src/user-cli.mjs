@@ -22,7 +22,7 @@ const VALUE_OPTIONS = new Map([
 const SWITCH_OPTIONS = new Set(["--dry-run", "--json", "--allow-native-act", "--isolated", "--local"]);
 
 export function everydayHelp() {
-  return `VMAgents — autonomous gents with persistent Linux VMs
+  return `o-gents — autonomous gents with persistent Linux VMs
 
 Everyday commands:
   gent chat                       Talk to one persistent gent; /bye exits
@@ -33,7 +33,7 @@ Everyday commands:
   gent mode auto                  Use available hosts; keep local execution available
   gent mode local                 Keep gents here with internet access
   gent peers                      See connected machines and their availability
-  gent connect HOST               Connect another trusted VMAgents controller over SSH
+  gent connect HOST               Connect another trusted o-gents controller over SSH
   gent list                       List saved gents
   gent show ID                    Inspect a gent's memory and status
   gent resume ID                  Continue a saved gent
@@ -57,7 +57,7 @@ Use gent chat --help or gent task --help for details, or gent help --all for adv
 export function commandHelp(command) {
   const help = {
     chat: `Usage: gent chat ["your message"] [options]\n\nChat opens one persistent gent with its own Linux VM. Requests to run commands\nuse that VM, and later messages keep its files and history. Type /bye to leave.\n  --resume ID      Continue a saved gent and its VM\n  --local          Keep execution here with normal internet access\n  --on NAME        Use a connected compatible host\n  --allow-native-act  Permit cataloged native host actions (VM commands need no such flag)\n  --text           Plain model conversation without VM execution\n\nExamples: gent chat "Run Node and report its version"\n          gent chat --resume chat-12345678\n\nText-only chat uses /bye or Ctrl+D to exit. Thinking is disabled by default for\n--text; set OVM_CHAT_THINK=true to enable it. OVM_SWARM_MODEL selects the model;\nOVM_OLLAMA_URL selects its local server. No JS or TS compilation is needed.`,
-    task: `Usage: gent task "what you want done" [options]\n\nOne gent runs by default. --agents 3 starts three; --max-agents N permits growth.\n  --rounds N       Maximum reasoning rounds (default 4)\n  --model NAME     Use another installed Ollama model\n  --local          Run here with normal internet access\n  --on NAME        Run on a connected VM host\n  --resume ID      Continue saved files and history with this new mission\n  --isolated       Disable networking for this task and its descendants\n  --dry-run        Inspect the plan without inference or VM execution\n  --json           Print machine-readable results\n\nExample: gent task "Run uname -m and report the observed result"\nAdvanced swarm flags are accepted. For specification files, use gent swarm --spec FILE.\nGuest commands run inside private Linux VMs with NAT. Automatic mode adds the shared peer network when available; optional network failures keep local execution available.\nNative host actions require --allow-native-act.`,
+    task: `Usage: gent task "what you want done" [options]\n\nOne gent starts by default, with room for a peer checker. --agents 3 starts three; --max-agents N sets the cap.\n  --rounds N       Maximum reasoning rounds (default 4)\n  --model NAME     Use another installed Ollama model\n  --local          Run here with normal internet access\n  --on NAME        Run on a connected VM host\n  --resume ID      Continue saved files and history with this new mission\n  --isolated       Disable networking for this task and its descendants\n  --dry-run        Inspect the plan without inference or VM execution\n  --json           Print machine-readable results\n\nExample: gent task "Run uname -m and report the observed result"\nAdvanced swarm flags are accepted. For specification files, use gent swarm --spec FILE.\nGuest commands run inside private Linux VMs with NAT. Automatic mode adds the shared peer network when available; optional network failures keep local execution available.\nNative host actions require --allow-native-act.`,
     check: `Usage: gent check [--json]\n\nChecks Node, dependencies, Ollama, the model, VM inputs, the prepared guest profile,\nnetwork configuration, and the normal run/MCP policy. It does not start a VM,\nstart the network, run inference, or test live guest-to-guest reachability.\nExit 0 means checked prerequisites pass; exit 2 means a check needs attention.`,
     setup: `Usage: gent setup\n\nInstalls JavaScript dependencies, Spark, missing private VM inputs, and guest tools,\nthen starts the shared guest network. Requires Node 26+, npm, Ollama, compatible\nlocal Claude Desktop VM artifacts, and internet for package downloads.\nThe first guest installation builds Ostadix automatically inside a private VM\nand can take tens of minutes; logs and progress are printed. Verified profiles\nare reused. Existing VM bundles are not recloned; guest updates use a staged\nimage and retain the previous root disk. No manual JS or TS compilation is needed.`,
   };
@@ -113,9 +113,9 @@ export function taskArguments(argv, { readSpec = (file) => JSON.parse(readFileSy
   const output = ["--mission", mission, ...flags];
   if (values.has("--resume")) return output;
   if (!values.has("--agents") && !Array.isArray(spec.agents) && spec.agentCount === undefined) output.push("--agents", "1");
-  const maximum = Number(values.get("--max-agents") ?? spec.maximumAgents ?? initialCount);
+  const maximum = Number(values.get("--max-agents") ?? spec.maximumAgents ?? Math.max(initialCount, 2));
   if (maximum < initialCount) throw new Error(`--max-agents must be at least the initial agent count (${initialCount}).`);
-  if (!values.has("--max-agents") && spec.maximumAgents === undefined) output.push("--max-agents", String(initialCount));
+  if (!values.has("--max-agents") && spec.maximumAgents === undefined) output.push("--max-agents", String(maximum));
   return output;
 }
 
@@ -379,7 +379,7 @@ export async function runSetup(root, { run = runChild, environment = process.env
       const metadata = await lstat(link);
       commandLinkReady = metadata.isSymbolicLink() && path.resolve(path.dirname(link), await readlink(link)) === target;
     } catch (error) { if (error.code !== "ENOENT") throw error; await symlink(target, link); }
-    if (commandLinkReady) output.write(`${name === "gent" ? "VMAgents command" : "Compatibility command"}: ${link}\n`);
+    if (commandLinkReady) output.write(`${name === "gent" ? "o-gents command" : "Compatibility command"}: ${link}\n`);
     else unresolved.push(`Existing ${link} points elsewhere and was preserved. Use ${target} for this checkout.`);
   }
   if (!(environment.PATH ?? "").split(path.delimiter).includes(installBin)) output.write(`Add ${installBin} to your shell PATH, or use ${path.join(root, "bin/gent")} directly.\n`);

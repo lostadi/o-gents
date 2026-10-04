@@ -4,6 +4,7 @@ import { mkdir, open, rename } from "node:fs/promises";
 import path from "node:path";
 import { AgentArtifactStore } from "./agent-artifacts.mjs";
 import { acceptSourceCapture, buildSourceTask } from "./source-witness.mjs";
+import { acceptOstadixResult, buildOstadixTask } from "./ostadix-control.mjs";
 import {
   parseAgentDecision,
   pocketId,
@@ -37,7 +38,7 @@ function decisionExcerpt(content) {
 }
 
 function assertionKinds(kind) {
-  return ({ vm: ["stdout_contains", "stdout_equals", "exit_code"], native: ["native_value_equals"], artifact: ["artifact_sha256"], source: ["source_kind"] })[kind] ?? [];
+  return ({ vm: ["stdout_contains", "stdout_equals", "exit_code"], ostadix: ["stdout_contains", "stdout_equals", "exit_code", "ostadix_checks_passed"], "peer-review": ["peer_review_passed"], native: ["native_value_equals"], artifact: ["artifact_sha256"], source: ["source_kind"] })[kind] ?? [];
 }
 
 function describeEvidence(record) {
@@ -95,6 +96,7 @@ export class PocketSwarm {
     this.round = resumeState?.round ?? 0;
     if (!Number.isSafeInteger(this.round) || this.round < 0 || !Number.isSafeInteger(maximumRounds) || maximumRounds < 1) throw new Error("saved and additional round counts must be valid nonnegative integers");
     this.startingRound = this.round;
+    this.reviewStartRound = overriddenMission ? this.round : (resumeState?.reviewStartRound ?? 0);
     this.maximumRounds = this.round + maximumRounds;
     this.maximumAgents = maximumAgents;
     this.onProgress = onProgress;
@@ -105,6 +107,8 @@ export class PocketSwarm {
     this.model = model ?? resumeState?.model ?? resumeState?.transcript?.findLast((turn) => turn.model)?.model ?? modelClient?.model ?? null;
     this.context = structuredClone(context ?? resumeState?.context ?? {});
     this.sourceFacts = structuredClone(resumeState?.sourceFacts ?? []);
+    this.programArtifacts = structuredClone(resumeState?.programArtifacts ?? []);
+    this.artifactReviews = structuredClone(resumeState?.artifactReviews ?? []);
     if (this.round === 0 && this.context.sourceBinding?.scope === "guest" && this.context.sourceBinding.path && !this.sourceFacts.length) {
       const primary = this.agents.find((agent) => agent.id === "scout") ?? this.agents[0];
       if (!primary.pendingActions.some((queued) => queued.action?.type === "inspect_source" && queued.action.path === this.context.sourceBinding.path)) primary.pendingActions.unshift({ id: randomUUID(), action: { type: "inspect_source", path: this.context.sourceBinding.path, scope: "guest", reason: "Inspect the explicitly user-selected source before deriving work" }, requires: "user-bound-source", createdRound: 0 });
@@ -134,6 +138,9 @@ export class PocketSwarm {
       model: this.model,
       context: this.context,
       sourceFacts: this.sourceFacts,
+      reviewStartRound: this.reviewStartRound,
+      programArtifacts: this.programArtifacts,
+      artifactReviews: this.artifactReviews,
       capsuleIdentity: this.capsuleIdentity,
       messages: this.mailbox.history,
       mailbox: this.mailbox.snapshot(),
@@ -170,7 +177,9 @@ export class PocketSwarm {
     const evidence = [];
     const identity = `${this.swarmId}:${agentId}:${observation.round}`;
     const hash = (value) => createHash("sha256").update(typeof value === "string" ? value : JSON.stringify(value) ?? "null").digest("hex");
-    if (observation.vm) evidence.push({ id: `${identity}:vm`, producer: agentId, round: observation.round, kind: observation.vm.artifactCapture ? "artifact-capture" : observation.vm.sourceInspection ? "source-capture" : "vm", status: observation.vm.error ? "error" : "observed", exitCode: observation.vm.exitCode ?? null, contentSha256: hash(observation.vm.output ?? ""), semanticVerification: false });
+    if (observation.vm) evidence.push({ id: `${identity}:vm`, producer: agentId, round: observation.round, kind: observation.vm.ostadixCapture ? "ostadix-capture" : observation.vm.artifactCapture ? "artifact-capture" : observation.vm.sourceInspection ? "source-capture" : "vm", status: observation.vm.error ? "error" : "observed", exitCode: observation.vm.exitCode ?? null, contentSha256: hash(observation.vm.output ?? ""), semanticVerification: false });
+    if (observation.ostadix) evidence.push({ id: `${identity}:ostadix`, producer: agentId, round: observation.round, kind: observation.ostadix.executed ? "ostadix" : "ostadix-check", sourceSha256: observation.ostadix.sourceSha256, executed: observation.ostadix.executed, checkStatus: observation.ostadix.checkStatus, exitCode: observation.ostadix.exitCode, status: observation.ostadix.success ? "observed" : "error", contentSha256: hash(observation.ostadix.stdout ?? ""), semanticVerification: false });
+    if (observation.peerReview) evidence.push({ id: `${identity}:peer-review`, producer: agentId, round: observation.round, kind: "peer-review", review: structuredClone(observation.peerReview), status: observation.peerReview.status, semanticVerification: false });
     for (const [index, native] of (observation.native ?? []).entries()) evidence.push({ id: `${identity}:native:${index}`, producer: agentId, round: observation.round, kind: "native", operation: native.operation, status: "observed", contentSha256: hash(native.value), semanticVerification: false });
     for (const [index, artifact] of (observation.artifacts ?? []).entries()) evidence.push({ id: `${identity}:artifact:${index}`, producer: agentId, round: observation.round, kind: "artifact", artifact: structuredClone(artifact), status: "observed", semanticVerification: false });
     for (const fact of observation.sourceFacts ?? []) evidence.push({ id: fact.evidenceId, producer: fact.producer, round: fact.round, kind: "source", sourceFact: structuredClone(fact), status: "observed", semanticVerification: false });
@@ -180,6 +189,9 @@ export class PocketSwarm {
 
   visibleEvidence(agentId, inbox = []) {
     const visible = new Set(this.sourceFacts.map((fact) => fact.evidenceId));
+    // Publishing code deliberately shares its execution provenance with peers.
+    for (const artifact of this.programArtifacts) visible.add(artifact.code.executionEvidenceId);
+    for (const review of this.artifactReviews) visible.add(review.reviewEvidenceId);
     for (const turn of this.transcript) {
       if (turn.agentId === agentId) {
         for (const entry of turn.observation.evidence ?? this.recordEvidence(turn.agentId, turn.observation)) visible.add(entry.id);
@@ -207,6 +219,8 @@ export class PocketSwarm {
       const allowedAssertions = assertionKinds(entry.record.kind);
       const result = { ...assertion, evidenceKind: entry.record.kind, allowedAssertions };
       if (!allowedAssertions.includes(assertion.kind)) return { ...result, passed: false, reason: `${assertion.kind} cannot check evidence kind ${entry.record.kind}. ${allowedAssertions.length ? `Allowed assertion: ${allowedAssertions.join(", ")}.` : "This is controller capture metadata; use the corresponding artifact/source evidence or a prior kind:vm observation."}` };
+      if (assertion.kind === "ostadix_checks_passed") return { ...result, passed: entry.observation.ostadix?.executed === true && entry.observation.ostadix?.checkStatus === "checks-passed" };
+      if (assertion.kind === "peer_review_passed") return { ...result, passed: entry.observation.peerReview?.status === "peer-verified" };
       if (assertion.kind === "native_value_equals") {
         const index = Number(entry.record.id.split(":").at(-1));
         const actual = entry.observation.native?.[index]?.value;
@@ -215,7 +229,7 @@ export class PocketSwarm {
       }
       if (assertion.kind === "artifact_sha256") return { ...result, passed: entry.record.artifact.sha256 === assertion.expected, observed: entry.record.artifact.sha256 };
       if (assertion.kind === "source_kind") return { ...result, passed: entry.record.sourceFact.kind === assertion.expected, observed: entry.record.sourceFact.kind };
-      const vm = entry.observation.vm;
+      const vm = entry.record.kind === "ostadix" ? { ...entry.observation.ostadix, output: entry.observation.ostadix.stdout } : entry.observation.vm;
       const passed = !vm.error && (assertion.kind === "exit_code" ? vm.exitCode === assertion.expected : assertion.kind === "stdout_equals" ? vm.output === assertion.expected : String(vm.output ?? "").includes(assertion.expected));
       return { ...result, passed, ...(!passed ? { reason: vm.error ? `VM result has an execution error: ${String(vm.error).slice(0, 512)}` : "Observed VM result does not satisfy the expected value", ...(assertion.kind === "exit_code" ? { observed: vm.exitCode ?? null } : { observedExcerpt: String(vm.output ?? "").slice(0, 1024) }) } : {}) };
     });
@@ -254,8 +268,83 @@ export class PocketSwarm {
   reusableSourceFact(agentId, sourcePath) {
     const fact = this.sourceFacts.findLast((entry) => entry.producer === agentId && entry.scope === "guest" && entry.path === sourcePath);
     if (!fact) return null;
-    const laterVm = this.transcript.some((turn) => turn.agentId === agentId && turn.round > fact.round && turn.actions.some((action) => action.type === "vm"));
+    const laterVm = this.transcript.some((turn) => turn.agentId === agentId && turn.round > fact.round && turn.actions.some((action) => ["vm", "ostadix", "review_artifact"].includes(action.type)));
     return laterVm ? null : fact;
+  }
+
+  codeArtifactStatus(artifact) {
+    const review = this.artifactReviews.findLast((entry) => entry.artifactId === artifact.id && entry.sourceSha256 === artifact.sha256);
+    return { ...artifact, peerVerification: review ?? { status: "awaiting-peer-review", scope: "A distinct gent must execute this exact source and pass its explicit checks" } };
+  }
+
+  pendingCodeReviews(agentId) {
+    const latest = new Map();
+    // Successful execution still creates a review obligation if publication
+    // fails. Derive it from retained decisions so resume cannot lose the gate.
+    for (const turn of this.transcript) {
+      if (turn.agentId !== agentId || turn.round <= this.reviewStartRound || !turn.observation.ostadix?.success || !turn.observation.ostadix.executed) continue;
+      const action = turn.actions.find((entry) => entry.type === "ostadix" && entry.mode === "run");
+      if (action) latest.set(action.name, { id: `unpublished:${this.swarmId}:${agentId}:${turn.round}:ostadix`, name: action.name,
+        sha256: turn.observation.ostadix.sourceSha256, code: { createdRound: turn.round },
+        publicationError: turn.observation.publicationError ?? "Published source receipt is missing" });
+    }
+    for (const artifact of this.programArtifacts) {
+      if (artifact.producer === agentId && artifact.code.createdRound > this.reviewStartRound
+        && artifact.code.createdRound >= (latest.get(artifact.name)?.code.createdRound ?? 0)) latest.set(artifact.name, artifact);
+    }
+    return [...latest.values()].filter((artifact) => this.codeArtifactStatus(artifact).peerVerification.status !== "peer-verified");
+  }
+
+  ensureCodeReviewer(producer, round, observation) {
+    if (this.agents.some((agent) => agent.id !== producer && !agent.finished)) return;
+    const previous = this.agents.find((agent) => agent.id !== producer);
+    if (previous) {
+      previous.finished = false; previous.summary = null;
+      delete previous.verification; delete previous.completionEvidence;
+      observation.repairs.push({ reason: "peer-reviewer-reopened", reviewer: previous.id, detail: "New code needs a distinct peer check; the finished reviewer has been reactivated" });
+    } else if (this.agents.length < this.maximumAgents) {
+      const id = `${producer.slice(0, 32)}-reviewer`;
+      const reviewer = createAgent({ id, role: "Independently read and rerun published Ostadix programs with review_artifact before reporting results", mission: this.mission }, producer);
+      this.agents.push(reviewer); this.mailbox.register(id);
+      observation.repairs.push({ reason: "peer-reviewer-created", reviewer: id, round, detail: "A distinct reviewer was added within maximumAgents to check the published code" });
+    } else {
+      observation.repairs.push({ reason: "peer-reviewer-unavailable", detail: "Peer checking requires at least two gents. Increase maximumAgents and resume; this artifact cannot be peer-verified by its producer." });
+    }
+  }
+
+  readExecution(action, agentId, inbox) {
+    const entry = this.visibleEvidence(agentId, inbox).get(action.evidenceId);
+    if (!entry || !["vm", "ostadix", "ostadix-check", "peer-review"].includes(entry.record.kind)) throw new Error("Execution evidence is unknown, unseen, or is capture metadata");
+    const result = entry.observation.ostadix ?? entry.observation.vm;
+    const excerpt = (value, limit) => ({ text: String(value ?? "").slice(0, limit), truncated: String(value ?? "").length > limit });
+    return { evidence: structuredClone(entry.record), source: entry.actions.find((item) => item.type === "ostadix")?.source ?? null,
+      actions: entry.actions.filter((item) => ["vm", "ostadix", "review_artifact"].includes(item.type)),
+      stdout: excerpt(result?.stdout ?? result?.output, 8192), stderr: excerpt(result?.stderr ?? result?.error, 2048),
+      exitCode: result?.exitCode ?? null, checks: result?.checks ?? [], peerReview: entry.observation.peerReview ?? null,
+      independentVerification: false, meaning: "Read of a retained observation; no new execution occurred" };
+  }
+
+  recordPeerReview(task, execution, round, observation, error = null) {
+    const target = this.programArtifacts.find((artifact) => artifact.id === task.ostadix.reviewOf.artifactId);
+    if (!target || target.producer === task.agentId || target.sha256 !== task.ostadix.sourceSha256
+      || (execution && execution.sourceSha256 !== target.sha256)
+      || !isDeepStrictEqual(task.ostadix.checks, target.code.contract.checks)) throw new Error("Peer review does not match a distinct producer's published source and check contract");
+    const review = { artifactId: target.id, sourceSha256: target.sha256, producer: target.producer, reviewer: task.agentId,
+      reviewerInstanceId: this.capsuleIdentity.instanceId, executionEvidenceId: target.code.executionEvidenceId,
+      reviewEvidenceId: `${this.swarmId}:${task.agentId}:${round}:peer-review`, round,
+      status: error ? "unverified" : execution.success && execution.executed && execution.checkStatus === "checks-passed" ? "peer-verified" : "checks-failed",
+      checks: execution?.checks ?? [], ...(error ? { error } : {}),
+      scope: error ? "The peer rerun returned no acceptable execution receipt; no successful check is established"
+        : "Exact published source and declared output checks rerun in a distinct gent VM; broader correctness is not inferred" };
+    observation.peerReview = review;
+    if (!this.artifactReviews.some((entry) => entry.reviewEvidenceId === review.reviewEvidenceId)) this.artifactReviews.push(review);
+    const producer = this.agents.find((agent) => agent.id === target.producer);
+    if (producer?.finished && this.pendingCodeReviews(producer.id).length) {
+      producer.finished = false; producer.summary = null;
+      delete producer.verification; delete producer.completionEvidence;
+      observation.repairs.push({ reason: "producer-review-invalidated", producer: producer.id,
+        detail: "A later peer rerun failed or was unverified; the producer's completion was reopened for review" });
+    }
   }
 
   async applyWorkers(tasks, workers, round, observations, { recovered = false } = {}) {
@@ -268,6 +357,33 @@ export class PocketSwarm {
       if (!observation) throw new Error("VM receipt has no saved agent observation");
       observation.vm = structuredClone(byId.get(task.agentId));
       observation.vm.commandSha256 = createHash("sha256").update(task.command).digest("hex");
+      if (task.ostadix) {
+        observation.vm.ostadixCapture = true;
+        try {
+          const execution = acceptOstadixResult(task, observation.vm);
+          observation.ostadix = execution;
+          observation.vm.output = JSON.stringify(execution);
+          if (task.ostadix.reviewOf) {
+            this.recordPeerReview(task, execution, round, observation);
+          } else if (execution.executed && execution.checkStatus === "checks-passed") {
+            const artifact = await this.artifactStore.publishOstadix(task, execution, { evidenceId: `${this.swarmId}:${task.agentId}:${round}:ostadix`, instanceId: this.capsuleIdentity.instanceId });
+            observation.artifacts ??= [];
+            if (!observation.artifacts.some((entry) => entry.id === artifact.id)) observation.artifacts.push(artifact);
+            if (!this.programArtifacts.some((entry) => entry.id === artifact.id)) {
+              this.programArtifacts.push(artifact);
+              this.ensureCodeReviewer(task.agentId, round, observation);
+              this.mailbox.send({ from: task.agentId, to: "all", kind: "request", round, message: `Review code artifact ${artifact.id}: read execution ${artifact.code.executionEvidenceId}, inspect its source, then use review_artifact to rerun its declared checks in your own VM.`, evidence: [] });
+            }
+          }
+        } catch (error) {
+          if (task.ostadix.reviewOf) {
+            try { this.recordPeerReview(task, null, round, observation, error.message); }
+            catch (bindingError) { observation.errors.push(`Peer review binding rejected: ${bindingError.message}`); }
+          }
+          if (!task.ostadix.reviewOf && observation.ostadix?.success && observation.ostadix.executed) observation.publicationError = error.message;
+          observation.errors.push(`Ostadix receipt rejected: ${error.message}`); observation.vm.error = error.message;
+        }
+      }
       if (task.sourceInspection) {
         observation.vm.sourceInspection = true;
         try {
@@ -295,7 +411,11 @@ export class PocketSwarm {
       this.recordEvidence(task.agentId, observation);
       const agent = this.agents.find((entry) => entry.id === task.agentId);
       if (agent && (!agent.lastObservation || agent.lastObservation.round <= round)) agent.lastObservation = observation;
-      this.onProgress({ type: "vm-result", round, agentId: task.agentId, exitCode: observation.vm.exitCode ?? null, error: observation.vm.error?.slice(0, 1024) ?? null, output: observation.vm.output ?? "" });
+      this.onProgress({ type: "vm-result", round, agentId: task.agentId,
+        exitCode: observation.ostadix?.exitCode ?? observation.vm.exitCode ?? null,
+        error: (observation.vm.error ?? observation.ostadix?.error)?.slice(0, 1024) ?? null,
+        ...(observation.ostadix ? { ostadixStatus: observation.ostadix.checkStatus, peerStatus: observation.peerReview?.status,
+          output: observation.ostadix.stdout || observation.ostadix.stderr || `${observation.ostadix.checkStatus}\n` } : { output: observation.vm.output ?? "" }) });
     }
   }
 
@@ -327,7 +447,7 @@ export class PocketSwarm {
         round = Math.max(0, ...matching.map((turn) => turn.round));
       }
       const turns = this.transcript.filter((turn) => turn.round === round);
-      if (!round || !turns.length || tasks.some((task) => !turns.some((turn) => turn.agentId === task.agentId && turn.actions?.some((action) => (action.type === "vm" && action.command === task.command) || (["publish", "inspect_source"].includes(action.type) && pending?.tasks.some((saved) => saved.agentId === task.agentId && saved.command === task.command && (saved.artifactPublication || saved.sourceInspection))))))) throw new Error("Recovered VM receipt does not match the saved decisions");
+      if (!round || !turns.length || tasks.some((task) => !turns.some((turn) => turn.agentId === task.agentId && turn.actions?.some((action) => (action.type === "vm" && action.command === task.command) || (["publish", "inspect_source", "ostadix", "review_artifact"].includes(action.type) && pending?.tasks.some((saved) => saved.agentId === task.agentId && saved.command === task.command && (saved.artifactPublication || saved.sourceInspection || saved.ostadix))))))) throw new Error("Recovered VM receipt does not match the saved decisions");
       if (pending && (pending.tasks.length !== tasks.length || pending.tasks.some((task) => !tasks.some((entry) => task.agentId === entry.agentId && task.command === entry.command)))) throw new Error("Recovered VM receipt does not match the pending dispatch");
       const observations = new Map(turns.map((turn) => [turn.agentId, turn.observation]));
       await this.applyWorkers(pending?.tasks ?? tasks, recovered.workers ?? recovered, round, observations, { recovered: true });
@@ -400,8 +520,12 @@ export class PocketSwarm {
             sourceFacts: structuredClone(this.sourceFacts.slice(-64)),
             sourceBinding: this.context.sourceBinding ?? null,
             availableEvidence: [...this.visibleEvidence(agent.id, inbox).values()].map(({ record }) => record),
-            availableArtifacts: await this.artifactStore?.list() ?? [],
+            availableArtifacts: (await this.artifactStore?.list() ?? []).map((artifact) => artifact.kind === "ostadix-program" ? this.codeArtifactStatus(artifact) : artifact),
+            artifactReviews: structuredClone(this.artifactReviews.slice(-32)),
+            pendingCodeReviews: this.pendingCodeReviews(agent.id).map((artifact) => ({ id: artifact.id, name: artifact.name, sourceSha256: artifact.sha256, ...(artifact.publicationError ? { publicationError: artifact.publicationError } : {}) })),
             recentHistory: this.transcript.filter((turn) => turn.agentId === agent.id).slice(-4),
+            lastExecutionObservation: this.transcript.findLast((turn) => turn.agentId === agent.id &&
+              (turn.observation.ostadix || turn.observation.vm || turn.observation.native?.length || turn.observation.peerReview))?.observation ?? null,
           });
           const decision = parseAgentDecision(response.content, { peerIds, nativeOperations: nativeOperations.map(({ name }) => name), interactive: this.interactive });
           this.onProgress({ type: "agent-result", round, agentId: agent.id, actions: decision.actions.map(({ type }) => type), error: null });
@@ -430,11 +554,11 @@ export class PocketSwarm {
         observations.get(agent.id).repairs.push(...(decision.repairs ?? []).map((repair) => repair.queuedAgainst === "this-turn-vm" ? { ...repair, queuedAgainst: vmEvidenceId } : repair));
         for (const queued of decision.queuedActions ?? []) agent.pendingActions.push({ id: randomUUID(), ...structuredClone(queued), queuedAgainst: vmEvidenceId, createdRound: round });
         agent.rounds += 1;
-        const requestedNewEvidence = decision.actions.some((action) => ["vm", "native", "publish"].includes(action.type) || (action.type === "inspect_source" && !this.reusableSourceFact(agent.id, action.path)));
+        const requestedNewEvidence = decision.actions.some((action) => ["vm", "native", "publish", "ostadix", "review_artifact"].includes(action.type) || (action.type === "inspect_source" && !this.reusableSourceFact(agent.id, action.path)));
         for (const action of decision.actions) {
           if (action.type === "send") {
             if (requestedNewEvidence && action.kind === "report") {
-              const binding = decision.actions.some((entry) => entry.type === "inspect_source") ? `${this.swarmId}:${agent.id}:${round}:source:0` : decision.actions.some((entry) => ["vm", "publish"].includes(entry.type)) ? vmEvidenceId : `${this.swarmId}:${agent.id}:${round}:native:0`;
+              const binding = decision.actions.some((entry) => entry.type === "inspect_source") ? `${this.swarmId}:${agent.id}:${round}:source:0` : decision.actions.some((entry) => ["ostadix", "review_artifact"].includes(entry.type)) ? `${this.swarmId}:${agent.id}:${round}:ostadix` : decision.actions.some((entry) => ["vm", "publish"].includes(entry.type)) ? vmEvidenceId : `${this.swarmId}:${agent.id}:${round}:native:0`;
               const claim = { id: randomUUID(), kind: "report", to: action.to, message: action.message, proposedEvidence: action.evidence, queuedAgainst: binding, createdRound: round, status: "needs-observation-review" };
               if (agent.pendingClaims.length >= 16) {
                 observations.get(agent.id).repairs.push({ dropped: "send", reason: "pending-claim-capacity", detail: "Review existing pending claims before proposing more reports" });
@@ -467,6 +591,21 @@ export class PocketSwarm {
               command: action.command,
               inheritRootfs: agent.inheritRootfs,
             });
+          } else if (action.type === "ostadix") {
+            try { vmTasks.push({ ...buildOstadixTask(action, agent, { round }), inheritRootfs: agent.inheritRootfs }); }
+            catch (error) { observations.get(agent.id).errors.push(`Ostadix action rejected: ${error.message}`); }
+          } else if (action.type === "read_execution") {
+            try {
+              observations.get(agent.id).executionReads ??= [];
+              observations.get(agent.id).executionReads.push(this.readExecution(action, agent.id, item.inbox));
+            } catch (error) { observations.get(agent.id).errors.push(`Execution read rejected: ${error.message}`); }
+          } else if (action.type === "review_artifact") {
+            try {
+              const { artifact, action: program } = await this.artifactStore.readOstadixArtifact(action.artifactId);
+              if (artifact.producer === agent.id) throw new Error("A producer cannot supply its own independent peer review; ask or spawn another gent");
+              if (!this.programArtifacts.some((entry) => entry.id === artifact.id)) throw new Error("Code artifact has no published execution in this swarm");
+              vmTasks.push({ ...buildOstadixTask(program, agent, { round, reviewOf: { artifactId: artifact.id, producer: artifact.producer } }), inheritRootfs: agent.inheritRootfs });
+            } catch (error) { observations.get(agent.id).errors.push(`Peer review rejected: ${error.message}`); }
           } else if (action.type === "publish") {
             try {
               if (!this.artifactStore) throw new Error("Artifact publication is not configured for this controller");
@@ -486,7 +625,7 @@ export class PocketSwarm {
             spawnRequests.push({ parentId: agent.id, action });
           } else if (action.type === "reply") {
             if (requestedNewEvidence) {
-              const binding = decision.actions.some((entry) => entry.type === "inspect_source") ? `${this.swarmId}:${agent.id}:${round}:source:0` : decision.actions.some((entry) => ["vm", "publish"].includes(entry.type)) ? vmEvidenceId : `${this.swarmId}:${agent.id}:${round}:native:0`;
+              const binding = decision.actions.some((entry) => entry.type === "inspect_source") ? `${this.swarmId}:${agent.id}:${round}:source:0` : decision.actions.some((entry) => ["ostadix", "review_artifact"].includes(entry.type)) ? `${this.swarmId}:${agent.id}:${round}:ostadix` : decision.actions.some((entry) => ["vm", "publish"].includes(entry.type)) ? vmEvidenceId : `${this.swarmId}:${agent.id}:${round}:native:0`;
               if (agent.pendingClaims.length >= 16) { observations.get(agent.id).repairs.push({ dropped: "reply", reason: "pending-claim-capacity", detail: "Review existing pending claims before proposing another reply" }); continue; }
               const claim = { id: randomUUID(), kind: "reply", message: action.message, proposedEvidence: action.evidence, proposedAssertions: action.assertions, queuedAgainst: binding, createdRound: round, status: "needs-observation-review" };
               agent.pendingClaims.push(claim);
@@ -510,6 +649,13 @@ export class PocketSwarm {
               observations.get(agent.id).errors.push("finish deferred: inspect this round's VM/native evidence on the next turn");
             } else {
               try {
+                const pendingReviews = this.pendingCodeReviews(agent.id);
+                if (pendingReviews.length) {
+                  const publicationFailure = pendingReviews.some((artifact) => artifact.publicationError);
+                  if (!publicationFailure) this.ensureCodeReviewer(agent.id, round, observations.get(agent.id));
+                  observations.get(agent.id).repairs.push({ dropped: "finish", reason: "awaiting-peer-review", artifacts: pendingReviews.map((artifact) => artifact.id), detail: publicationFailure ? "Execution succeeded but required source publication failed. Resolve the publication error before peer review; the execution has not been replayed." : "A distinct gent must rerun the explicit checks on the latest published code artifact before the producer finishes. A static check or repeated producer assertion is insufficient." });
+                  continue;
+                }
                 if (!action.assertions?.length) {
                   observations.get(agent.id).repairs.push({ dropped: "finish", reason: "missing-predicate", detail: "Finish requires at least one explicit assertion against observed evidence; a summary is not a completion predicate" });
                   continue;
@@ -557,7 +703,8 @@ export class PocketSwarm {
       if (vmTasks.length > 0) {
         this.pendingDispatch = { round, tasks: structuredClone(vmTasks), spawnRequests: structuredClone(spawnRequests), phase: "prepared" };
         await this.persist(round);
-        this.onProgress({ type: "vm-start", round, tasks: vmTasks.map(({ agentId, command }) => ({ agentId, command: command.slice(0, 1024) })) });
+        this.onProgress({ type: "vm-start", round, tasks: vmTasks.map(({ agentId, command, ostadix }) => ({ agentId,
+          command: ostadix ? `Ostadix ${ostadix.reviewOf ? "peer review" : ostadix.mode}: ${ostadix.name}` : command.slice(0, 1024) })) });
         try {
           const workers = await this.vmFleet.run(vmTasks);
           await this.applyWorkers(vmTasks, workers, round, observations);
@@ -604,6 +751,8 @@ export class PocketSwarm {
       waitingForUser: this.waitingForUser,
       lastReplies: this.agents.map((agent) => agent.lastReply).filter((reply) => reply && reply.round > this.startingRound),
       model: this.model,
+      programArtifacts: this.programArtifacts.map((artifact) => this.codeArtifactStatus(artifact)),
+      artifactReviews: this.artifactReviews,
       capsuleIdentity: this.capsuleIdentity,
       agents: this.agents.map((agent) => ({
         id: agent.id,

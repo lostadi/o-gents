@@ -145,25 +145,41 @@ test("Ollama receives bounded private action/result history and each agent's ass
       const first = requests.find((request) => request.identity.id === id && request.round === 1);
       assert.deepEqual(first.recentHistory, []);
       const second = requests.find((request) => request.identity.id === id && request.round === 2);
-      assert.equal(second.recentHistory.length, 1);
-      assert.match(second.recentHistory[0].actions[0].command, new RegExp(`command-${id}-1`));
-      assert.equal(second.recentHistory[0].observation.vm.exitCode, 0);
-      assert.match(second.recentHistory[0].observation.vm.output, new RegExp(`output-${id}`));
+      assert.equal(second.recentHistory.length + (second.contextOmissions.omitted.recentHistory ?? 0), 1);
+      assert.equal(second.previousObservation.round, 1);
+      assert.equal(second.previousObservation.vm.exitCode, 0);
+      assert.match(second.previousObservation.vm.output, new RegExp(`output-${id}`));
+      assert.ok(second.previousObservation.evidence.some(record => record.id === `history:${id}:1:vm` && record.producer === id));
       const last = requests.find((request) => request.identity.id === id && request.round === 6);
       assert.equal(last.mission, "shared mission");
       assert.equal(last.maximumAgents, 2);
       assert.equal(last.agentMission, id === "builder" ? "implement the parser" : "independently verify the parser");
-      assert.deepEqual(last.recentHistory.map(({ round }) => round), [2, 3, 4, 5]);
+      assert.equal(last.recentHistory.length + (last.contextOmissions.omitted.recentHistory ?? 0), 4,
+        "Removed private history must be explicitly counted, not presented as the complete history");
+      assert.ok(last.recentHistory.every(turn => [2, 3, 4, 5].includes(turn.round)));
       for (const turn of last.recentHistory) {
-        assert.ok(turn.actions[0].command.length <= 1024);
-        assert.match(turn.actions[0].command, /\[truncated\]/);
+        if (turn.actions[0].command) {
+          assert.ok(turn.actions[0].command.length <= 1024);
+          assert.match(turn.actions[0].command, new RegExp(`command-${id}-${turn.round}`));
+          assert.match(turn.actions[0].command, /\[truncated\]/);
+        } else assert.equal(turn.actions[0].detailsOmitted, true);
         assert.ok(turn.observation.vm.output.length <= 2048);
         assert.match(turn.observation.vm.output, new RegExp(`output-end-${id}$`));
         assert.ok(turn.observation.native[0].valueExcerpt.length <= 2048);
-        const other = id === "builder" ? "checker" : "builder";
-        assert.doesNotMatch(JSON.stringify(turn), new RegExp(`(?:command|output|native)-${other}`));
       }
-      assert.equal(last.previousObservation.vm.output, last.recentHistory.at(-1).observation.vm.output);
+      assert.equal(last.previousObservation.round, 5);
+      assert.equal(last.previousObservation.vm.exitCode, 0);
+      assert.ok(last.previousObservation.evidence.some(record => record.id === `history:${id}:5:vm`
+        && record.producer === id && record.allowedAssertions.includes("exit_code")));
+      assert.match(last.previousObservation.vm.output, new RegExp(`^output-${id} .*\\[truncated\\].*output-end-${id}$`, "s"));
+      for (const request of [second, last]) {
+        assert.ok(JSON.stringify(request).length <= 8000);
+        assert.match(request.contextOmissions.detail, /not complete history/);
+        assert.ok(request.previousObservation.vm.output.length <= 2048);
+        assert.ok(request.previousObservation.native[0].valueExcerpt.length <= 2048);
+        const other = id === "builder" ? "checker" : "builder";
+        assert.doesNotMatch(JSON.stringify(request), new RegExp(`(?:command|output|native)-${other}`), "The bounded projection must retain the private evidence boundary");
+      }
     }
     const persisted = JSON.parse(await readFile(result.statePath, "utf8"));
     assert.equal(persisted.transcript.length, 12);

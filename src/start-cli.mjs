@@ -9,7 +9,7 @@ export async function runStart(argv, {
 } = {}) {
   if (input.isTTY || argv.length) {
     if (input.isTTY && !argv.includes("--help") && !argv.includes("-h")) {
-      progress.write("Opening VMAgents chat. /bye exits. For the MCP server, use npm run mcp.\n");
+      progress.write("Opening o-gents chat. /bye exits. For the MCP server, use npm run mcp.\n");
     }
     return run(process.execPath, [path.join(root, "bin/gent"), "chat", ...argv], { env: environment });
   }

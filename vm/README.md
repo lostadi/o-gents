@@ -1,4 +1,4 @@
-# VMAgents private VM state
+# o-gents private VM state
 
 This directory is retained in clean checkouts because the MCP server confines
 all writable VM state beneath it. Run `../scripts/clone-bundle.zsh` to create
