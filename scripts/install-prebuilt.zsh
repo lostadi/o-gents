@@ -62,7 +62,7 @@ done
 /bin/ln -sfn "$host_dir/OVMShell" "$install_bin/ovm-shell"
 /bin/ln -sfn "$host_dir/OVMSwarm" "$install_bin/ovm-swarm"
 
-print "installed VMAgents launchers in $install_bin (gent; ovm remains compatible)"
+print "installed o-gents launchers in $install_bin (gent; ovm remains compatible)"
 if [[ ! -d "$project_root/vm/claudevm.bundle" ]]; then
   print "next: $project_root/scripts/clone-bundle.zsh"
 fi

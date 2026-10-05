@@ -31,7 +31,7 @@ With access to this private repository:
 ```sh
 git clone git@github.com:lostadi/o-gents.git
 cd o-gents
-./bin/gent setup
+./setup.sh
 ./bin/gent check
 ./bin/gent chat
 ```
@@ -40,6 +40,26 @@ Setup installs the application dependencies and default model, prepares a
 private guest with Ostadix and language runtimes, and sets up the guest network.
 The first guest build can take tens of minutes. Later runs reuse its verified
 profile. Setup does not install Node or Ollama for you.
+
+[`setup.sh`](setup.sh) calls the same setup path as `./bin/gent setup`.
+Use `./setup.sh --help` to read its requirements without installing anything.
+The Claude VM implementation and setup machinery are included:
+
+| Included files | Purpose |
+| --- | --- |
+| [`host/`](host/) and [`prebuilt/macos-arm64/`](prebuilt/macos-arm64/) | Swift VM runners, entitlements, ready-to-use launchers, and checksums. |
+| [`scripts/install-prebuilt.zsh`](scripts/install-prebuilt.zsh) | Install the launchers and copy the matching local Claude helper image. |
+| [`scripts/clone-bundle.zsh`](scripts/clone-bundle.zsh) | Create the private VM bundle from a compatible, stopped local Claude bundle. |
+| [`guest/provision.sh`](guest/provision.sh) and [`guest/upgrade.sh`](guest/upgrade.sh) | Install and update the guest's Ostadix environment and language runtimes. |
+| [`src/server.mjs`](src/server.mjs) and [`integrations/`](integrations/) | MCP server and OpenCode/Ostadix integration templates. |
+| [`compatibility/`](compatibility/) | The accepted Claude VM and helper versions. |
+
+Setup obtains the private Claude disk and helper locally; they are not Git
+contents. For nonstandard locations, set `CLAUDE_VM_SOURCE_BUNDLE` and
+`CLAUDE_VM_SMOL_SOURCE` before running setup. An existing private bundle is
+preserved. Guest updates are staged and keep the previous root disk as a backup.
+Setup also prepares the owner-only, read-only `share/` directory required by
+the Claude MCP runner; Git does not preserve those directory permissions.
 
 The application runs directly from `src/*.mjs`; there is no JavaScript or
 TypeScript compilation step. `index.ts` is a separate demo.
@@ -238,6 +258,7 @@ keyboard, pointer, and application actions require explicit opt-in.
 - [Command reference](docs/command-reference.md): flags, aliases, and advanced commands.
 - [Ostadix actions and peer review](docs/ostadix-agent-control.md): exact execution and review contracts.
 - [Manual verification, October 4, 2026](docs/manual-verification-2026-10-04.md): commands exercised live, observed results, and paths that remain unverified.
+- [Setup verification, October 5, 2026](docs/setup-verification-2026-10-05.md): included Claude VM implementation, setup entrypoint, and share preparation.
 
 The manual record distinguishes VM/controller behavior from model behavior.
 It is not a claim that every platform, remote host, or possible task has passed.

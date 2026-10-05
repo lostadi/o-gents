@@ -18,7 +18,7 @@ their existing names.
 
 ```zsh
 cd /Users/ustad/claude-vm-mcp
-./bin/gent setup
+./setup.sh
 ./bin/gent check
 ./bin/gent chat
 ```
@@ -332,11 +332,13 @@ private `runtime/` and `vm/` state:
 ```zsh
 git clone git@github.com:lostadi/o-gents.git
 cd o-gents
-./bin/gent setup
+./setup.sh
 ./bin/gent check
 ./bin/gent chat "Run uname -m and report its output"
 ```
 
+The root `setup.sh` delegates to `./bin/gent setup`; both use the same installer.
+Use `./setup.sh --help` to inspect requirements without installing anything.
 Setup installs signed Swift launchers and the `~/.local/bin` shortcut. Private
 inputs must match the qualified profile in [compatibility](../compatibility/README.md).
 An existing bundle is not recloned. Optional Swift rebuilding uses

@@ -1,6 +1,6 @@
 import { spawn, execFile } from "node:child_process";
 import { constants, existsSync, accessSync, readFileSync } from "node:fs";
-import { copyFile, cp, lstat, mkdir, mkdtemp, readlink, rm, statfs, symlink } from "node:fs/promises";
+import { copyFile, cp, lstat, mkdir, mkdtemp, open, readlink, rm, statfs, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -11,6 +11,7 @@ import { readDistributionSettings } from "./distribution-config.mjs";
 import { selectRsync } from "./controller-transport.mjs";
 import { resolveVMBackend } from "./vm-backend.mjs";
 import { qemuTools } from "./qemu-vm.mjs";
+import { verifyShareDirectory } from "./preflight.mjs";
 
 const executeFile = promisify(execFile);
 const EVERYDAY_COMMANDS = new Set(["chat", "task", "check", "setup"]);
@@ -290,6 +291,30 @@ export function formatReadiness(report) {
   return `${lines.join("\n")}\n`;
 }
 
+export async function prepareSetupShare(root) {
+  if (typeof process.getuid !== "function" || !Number.isInteger(constants.O_NOFOLLOW) || !Number.isInteger(constants.O_DIRECTORY)) {
+    throw new Error("This platform cannot safely prepare the VM host share with no-follow directory access.");
+  }
+  const sharePath = path.join(root, "share");
+  try { await mkdir(sharePath, { mode: 0o500 }); }
+  catch (error) { if (error.code !== "EEXIST") throw error; }
+  const before = await lstat(sharePath);
+  if (!before.isDirectory() || before.isSymbolicLink() || before.uid !== process.getuid()) {
+    throw new Error("VM host share must be a user-owned, non-symlink directory.");
+  }
+  const handle = await open(sharePath, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    const opened = await handle.stat();
+    if (!opened.isDirectory() || opened.uid !== process.getuid() || opened.dev !== before.dev || opened.ino !== before.ino) {
+      throw new Error("VM host share changed while opening it; permissions were not changed.");
+    }
+    // Git preserves the share's files, but not its directory permissions.
+    // Change only this checked directory handle, never a substituted link target.
+    await handle.chmod(0o500);
+  } finally { await handle.close(); }
+  return verifyShareDirectory(sharePath, root);
+}
+
 async function installMissingPrebuilt(root, run, environment, output) {
   const names = ["ClaudeVZRunner", "OVMShell", "OVMSwarm", "smol-bin.arm64.img"];
   const missing = names.filter((name) => !existsSync(path.join(root, "host", name)));
@@ -349,6 +374,8 @@ export async function runSetup(root, { run = runChild, environment = process.env
     try {
       const guest = await prepareGuests({ projectRoot: root, onOutput: (chunk) => output.write(chunk) });
       if (guest?.prepared !== true || guest?.verified !== true) throw new Error("Guest preparation did not return verified installation evidence.");
+      await prepareSetupShare(root);
+      output.write("Read-only VM host share prepared.\n");
       if (environment.OVM_NETWORK_MODE !== "isolated" && readDistributionSettings(root, environment).mode !== "local") {
         output.write("Starting the shared guest network…\n");
         try { await prepareNetwork({ projectRoot: root }); }

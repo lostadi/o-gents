@@ -35,7 +35,7 @@ cd /Users/ustad/claude-vm-mcp
 ```
 
 For first-time setup or a missing setup component on a compatible Apple
-Silicon Mac, run `./bin/gent setup` from the checkout. It installs dependencies
+Silicon Mac, run `./setup.sh` (or `./bin/gent setup`) from the checkout. It installs dependencies
 and the Spark model, prepares guest tools, and configures the shared network.
 It requires Node 26+, npm, compatible Ollama and local private VM inputs.
 Fresh guest provisioning uses Apple Silicon; QEMU hosts use a transferred
