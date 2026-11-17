@@ -1,11 +1,11 @@
 # o-gents
 
-**An agent with a VM of its own. Each one is a gent.**
-
-o-gents gives local agents a persistent Linux environment in which to work.
+o-gents runs local agents in persistent Linux VMs. Each agent is a **gent**.
 A gent can write files, run programs, inspect the results, and continue from
-where it stopped. Several gents can work together, pass actual artifacts, and
-rerun each other's code in separate VMs.
+where it stopped. Several gents can exchange artifacts and rerun each other's
+code in separate VMs.
+
+Created by [Lee Daghlar Ostadi](https://github.com/lostadi).
 
 Ostadix is part of the execution path. Its nested language blocks let a gent
 keep work in a single `.O` program with explicit checks. The controller asks
@@ -26,10 +26,10 @@ local Claude Desktop VM inputs. Those private inputs are not in this repository;
 the accepted versions are recorded in
 [`compatibility/claude-desktop.json`](compatibility/claude-desktop.json).
 
-With access to this private repository:
+Clone the source:
 
 ```sh
-git clone git@github.com:lostadi/o-gents.git
+git clone https://github.com/lostadi/o-gents.git
 cd o-gents
 ./setup.sh
 ./bin/gent check
@@ -38,6 +38,9 @@ cd o-gents
 
 Setup installs the application dependencies and default model, prepares a
 private guest with Ostadix and language runtimes, and sets up the guest network.
+Guest provisioning builds Ostadix from a clean local checkout or a pinned
+fallback revision from [`lostadi/OSTADIX`](https://github.com/lostadi/OSTADIX); see the
+[guest source requirements](docs/getting-started.md#guest-source-requirements).
 The first guest build can take tens of minutes. Later runs reuse its verified
 profile. Setup does not install Node or Ollama for you.
 
@@ -190,8 +193,9 @@ reflinks, copies can require their full size. See the
 
 ## Local and remote execution
 
-By default, local execution uses Apple's `Virtualization.framework` on Apple Silicon.
-Task/chat also have a QEMU backend for Linux and macOS:
+Task and chat select Apple's `Virtualization.framework` on Apple Silicon macOS
+and QEMU on other supported Linux/macOS hosts. Select an engine explicitly with
+`--backend`:
 
 ```sh
 gent task "Run uname -m and report its output" --backend apple --local
@@ -257,8 +261,12 @@ keyboard, pointer, and application actions require explicit opt-in.
 - [Getting started](docs/getting-started.md): installation, guest tools, and daily use.
 - [Command reference](docs/command-reference.md): flags, aliases, and advanced commands.
 - [Ostadix actions and peer review](docs/ostadix-agent-control.md): exact execution and review contracts.
+- [Release verification, November 17, 2026](docs/release-verification-2026-11-17.md): current source, dependency checks, CLI checks, and Linux test limits.
 - [Manual verification, October 4, 2026](docs/manual-verification-2026-10-04.md): commands exercised live, observed results, and paths that remain unverified.
 - [Setup verification, October 5, 2026](docs/setup-verification-2026-10-05.md): included Claude VM implementation, setup entrypoint, and share preparation.
 
-The manual record distinguishes VM/controller behavior from model behavior.
-It is not a claim that every platform, remote host, or possible task has passed.
+The dated October records describe earlier live VM and model runs. The November
+record describes the checks run for this release. Neither establishes that every
+platform, remote host, or possible task has passed.
+
+[ISC license](LICENSE), copyright 2026 Lee Daghlar Ostadi.

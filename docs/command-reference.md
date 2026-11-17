@@ -1,9 +1,9 @@
 # o-gents complete command reference and use guide
 
-Checked against this checkout's CLI help and parsers on 2026-10-04.
-Run commands in Terminal or Warp. No JavaScript or TypeScript compilation is
-needed. On Lee's Mac, `gent` is installed at `~/.local/bin/gent` and points to
-`/Users/ustad/claude-vm-mcp/bin/gent`.
+Reviewed against the CLI help and parsers for the November 17, 2026 release.
+Run commands in your terminal. No JavaScript or TypeScript compilation is needed.
+Setup links `~/.local/bin/gent` to the checkout's `bin/gent`; add `~/.local/bin`
+to your PATH or run `./bin/gent` from the checkout.
 
 This reference covers the public o-gents commands, aliases, daily options, model
 settings, saved gents, and advanced launchers. Host-installed Ostadix and
@@ -19,7 +19,7 @@ and `.ovm` archives retain their technical names.
 
 ## 1. Start using this installation
 
-The current Mac is already set up. Start with:
+After completing setup, start with:
 
 ```bash
 gent check
@@ -29,7 +29,7 @@ gent chat
 If `gent` is not found:
 
 ```bash
-cd /Users/ustad/claude-vm-mcp
+cd /absolute/path/to/o-gents
 ./bin/gent check
 ./bin/gent chat
 ```
@@ -244,15 +244,7 @@ requires working trusted SSH and a prepared compatible controller, Node 26+
 and rsync. It enrolls that controller into the shared network. Disconnect
 removes future placement; it does not stop VMs or revoke existing certificates.
 
-The already connected `rack` uses:
-
-```bash
-gent connect ustad@100.121.192.11 --name rack \
-  --path /home/ustad/ovm-portability-20261004 \
-  --node /home/ustad/.local/share/ovm-portable-tools/node-v26.8.2-linux-x64/bin/node
-```
-
-That command is a reconnect reference, not a required daily step. Connected
+Replace `USER@HOST`, connection names, and paths with your own values. Connected
 capacity is checked at dispatch; a successful readiness probe is not proof
 that arbitrarily large teams fit. A communicating family and its descendants
 stay on one controller. Independent families can occupy different hosts.
@@ -302,7 +294,7 @@ Model maintenance from the checkout (these are npm/Ollama commands, not
 additional `gent model` subcommands):
 
 ```bash
-cd /Users/ustad/claude-vm-mcp
+cd /absolute/path/to/o-gents
 npm run model:setup
 ollama list
 npm run model:chat
@@ -310,7 +302,7 @@ npm run model:chat
 
 `model:setup` downloads the Spark Q4_K_M GGUF and creates
 `huihui-spark-vm:32k`. Use the already qualified Spark-compatible Ollama server;
-on this Mac `open -a Ollama` starts the app installation. `model:chat` is plain
+on macOS, `open -a Ollama` starts the app installation. `model:chat` is plain
 Ollama conversation. Private imported weights need a server pointed at their
 `capsule-models` directory; [exact commands are here](agent-capsule-format.md#run-an-imported-private-model).
 
@@ -329,19 +321,19 @@ gent show ID --json > ~/gent-state.json
 Default state location:
 
 ```text
-/Users/ustad/claude-vm-mcp/vm/pockets/ID/swarm.json
+<o-gents-checkout>/vm/pockets/ID/swarm.json
 ```
 
 The state includes observations, messages, summaries and artifact references;
 guest root disks remain with the family. A guest file such as `/root/result.txt`
-is inside that gent's Linux disk, not automatically a Mac file. Ask the gent
+is inside that gent's Linux disk, not automatically a host file. Ask the gent
 to display it or publish it for peers. The terminal transcript is not a claim
 that every named deliverable was saved correctly.
 
 | Situation | Command / action |
 | --- | --- |
 | Need setup diagnosis | `gent check` |
-| Missing or stopped model server on this Mac | `open -a Ollama`, then `gent check` |
+| Missing or stopped model server on macOS | `open -a Ollama`, then `gent check` |
 | Want to see saved gents | `gent list` |
 | Round limit reached | `gent resume ID --rounds 8` |
 | Continue conversationally | `gent chat --resume ID` |
@@ -386,7 +378,7 @@ gent guests
 gent guests status
 gent guests status --json
 gent guests setup
-gent guests setup --source /Users/ustad/OSTADIX
+gent guests setup --source /absolute/path/to/OSTADIX
 gent guests setup --force
 gent guests check
 gent guests --help

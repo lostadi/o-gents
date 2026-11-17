@@ -1,6 +1,6 @@
 # Historical validation through October 4, 2026
 
-This material was moved from the previous README. These are historical results from separate runs, including automated tests. They were not rerun as part of the [current manual review](manual-verification-2026-10-04.md); words such as “current” below refer to the stage recorded at the time. Private evidence paths are relative to the original checkout and are not supplied by a fresh clone.
+This material was moved from the previous README. These are historical results from separate runs, including automated tests. They were not rerun as part of the [October 4 manual review](manual-verification-2026-10-04.md); words such as “current” below refer to the stage recorded at the time. Private evidence paths are relative to the original checkout and are not supplied by a fresh clone.
 
 The suite recorded at that stage passed **315/315 tests with no skips**:
 `runtime/qemu-portability-20261004/npm-test-final.log`.
@@ -205,7 +205,7 @@ recorded above in `pairing-image-refresh.json`.
 The published profile is `vm/claudevm.bundle/.ovm-guest-v1.json`; the migration,
 reciprocal-peer, and child receipts are under
 `runtime/guest-provision-20261004/`. See
-[the current evidence table](getting-started.md#prepared-guest-and-network-verification-2026-10-04)
+[the October 4 evidence table](getting-started.md#prepared-guest-and-network-verification-2026-10-04)
 for exact paths. These private runtime artifacts are excluded from the public
 launcher package. `npm test` is restricted to `test/*.test.mjs`, so saved manual
 live-test scripts are not executed by the automated suite.

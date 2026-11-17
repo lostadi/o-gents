@@ -104,23 +104,23 @@ two terminals in the destination's o-gents checkout. Replace `private-replica` w
 your imported ID; for a custom state location, use the import receipt's exact
 `privateModelsPath` instead of the path below.
 
-In the first terminal, choose a Spark-compatible Ollama server executable.
-These are the verified installations used for this checkout. On Lee's Mac:
+In the first terminal, choose an installed Spark-compatible Ollama server
+executable. For the macOS app installation:
 
 ```bash
 ovm_ollama_bin=/Applications/Ollama.app/Contents/Resources/ollama
 ```
 
-On the Rack or Debian Mini with the private Linux CPU installation:
+For another installation, use its actual executable path:
 
 ```bash
-ovm_ollama_bin="$HOME/.local/share/ovm-portable-tools/ollama-v0.35.0/bin/ollama"
-export LD_LIBRARY_PATH="$HOME/.local/share/ovm-portable-tools/ollama-v0.35.0/lib/ollama${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+ovm_ollama_bin=/absolute/path/to/ollama
 ```
 
-On another host, set `ovm_ollama_bin` to its installed Spark-compatible binary.
-The older Homebrew Ollama 0.33.2 server on this Mac cannot load Spark; selecting
-the app's 0.35.0 binary avoids accidentally starting that older server.
+If a private Linux installation needs a separate library directory, configure
+`LD_LIBRARY_PATH` according to that installation. The October verification used
+Ollama 0.35.0; server 0.33.2 rejected Spark. Check the server executable you
+select rather than assuming the CLI on PATH and the running server match.
 
 Then start the private server in the foreground. Choose an unused local port;
 `11439` is an example, separate from the usual server on `11434`:

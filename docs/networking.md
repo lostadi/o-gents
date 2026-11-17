@@ -13,7 +13,7 @@ A peer must be running and reachable to accept a connection.
 gent mode auto
 gent peers
 gent peers --discover
-gent connect ustad@YOUR_OTHER_MACHINE --name laptop
+gent connect USER@HOST --name laptop
 gent task "Your task" --on laptop
 gent task "Your task" --local
 gent chat --local                       # Persistent local VM-enabled chat
@@ -29,7 +29,8 @@ is not in its usual location, and `--node /absolute/path/to/node` for a privatel
 installed Node 26+ interpreter. For example:
 
 ```bash
-gent connect ustad@rack --name rack --path /home/ustad/claude-vm-mcp --node /home/ustad/.local/opt/node/bin/node
+gent connect USER@HOST --name second-host \
+  --path /absolute/path/to/o-gents --node /absolute/path/to/node
 ```
 
 Replace those paths with the destination's actual paths. Connect checks controller
@@ -41,8 +42,8 @@ them. Disconnect removes future placement, not existing certificates.
 
 `gent mode local` keeps internet access, runtimes, files and local multi-gent
 operation. `gent mode required` requires a compatible remote host and mesh for
-gent tasks; direct shell and normal MCP launches remain on this Mac and require
-the mesh. `--on NAME` is an explicit destination and does not silently fall back.
+gent tasks; direct shell and normal MCP launches remain on the initiating
+Apple Silicon Mac and require the mesh. `--on NAME` is an explicit destination and does not silently fall back.
 `--isolated` means no network access and should be used only when that is wanted.
 
 Host-to-host VM control uses SSH and durable dispatch receipts. The initiating
@@ -215,9 +216,14 @@ o-node status
 
 The implementation pins Nebula 1.11.2 and checks the official archive SHA-256 before installing host binaries. Useful upstream references: [release artifacts](https://github.com/slackhq/nebula/releases/tag/v1.11.2), [unprivileged lighthouse TUN setting](https://nebula.defined.net/docs/config/tun/), [relay behavior](https://nebula.defined.net/docs/config/relay/), and [NAT traversal](https://nebula.defined.net/docs/config/punchy/).
 
-## Observed verification on this checkout
+## Historical verification — October 4, 2026
 
-The current automated suite passed **315/315 tests with no skips**:
+These results belong to the original October installation. They were not rerun
+for the November source preview. See [current release verification](release-verification-2026-11-17.md)
+for the checks run on this release. The private `runtime/` evidence below is not
+included in a fresh clone.
+
+The October automated suite passed **315/315 tests with no skips**:
 `runtime/qemu-portability-20261004/npm-test-final.log`.
 
 Local QEMU HVF validation passed: a parent/child pair used distinct network

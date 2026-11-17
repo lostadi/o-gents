@@ -4,9 +4,9 @@ For every command, alias, option, and complete usage examples, see the
 [complete command reference](command-reference.md).
 
 o-gents runs directly with Node.js. You do not need to compile JavaScript or
-TypeScript. Paste these commands into Terminal or Warp. On Lee's Mac the
-checkout is `/Users/ustad/claude-vm-mcp`; the installed `gent` shortcut works from
-any directory. If the shortcut is missing, use `./bin/gent` from that checkout.
+TypeScript. Run these commands in your terminal. After setup, the `gent` shortcut
+in `~/.local/bin` works from any directory when that directory is on your PATH.
+If the shortcut is missing, use `./bin/gent` from your checkout.
 
 Each persistent VM-backed agent is a **gent**; a team contains **gents**. The
 previous `ovm` command remains an alias, including `ovm agent list` and the other
@@ -17,7 +17,7 @@ their existing names.
 ## Start here
 
 ```zsh
-cd /Users/ustad/claude-vm-mcp
+cd /absolute/path/to/o-gents
 ./setup.sh
 ./bin/gent check
 ./bin/gent chat
@@ -160,7 +160,7 @@ works, then run on the initiating machine:
 
 ```zsh
 gent peers --discover
-gent connect ustad@YOUR_OTHER_MACHINE --name laptop
+gent connect USER@HOST --name laptop
 gent peers
 gent task "Run uname -m and report the observed result" --on laptop
 gent disconnect laptop
@@ -170,7 +170,8 @@ For a nonstandard installation, add `--path /absolute/path/to/o-gents`.
 If Node 26+ is installed privately on that host, select its exact interpreter:
 
 ```zsh
-gent connect ustad@rack --name rack --path /home/ustad/claude-vm-mcp --node /home/ustad/.local/opt/node/bin/node
+gent connect USER@HOST --name second-host \
+  --path /absolute/path/to/o-gents --node /absolute/path/to/node
 ```
 
 Replace the example paths with that machine's actual paths. This keeps its
@@ -321,16 +322,15 @@ open -a Ollama
 curl -fsS http://127.0.0.1:11434/api/version
 ```
 
-On this Mac the Ollama app supplies the compatible server. The older Homebrew
-CLI/server was 0.33.2 and could not load Spark. Use `ollama serve` only after
+The October verification used the Ollama app's 0.35.0 server; the older
+Homebrew CLI/server at 0.33.2 could not load Spark. Use `ollama serve` only after
 verifying that the CLI installation also supplies a compatible server; leave
 that terminal open and use another for setup. If a compatible server is already
 running, keep it rather than starting a competing one.
-With access to the private repository, clone the source without any host's
-private `runtime/` and `vm/` state:
+Clone the source; private `runtime/` and `vm/` state stays on its original host:
 
 ```zsh
-git clone git@github.com:lostadi/o-gents.git
+git clone https://github.com/lostadi/o-gents.git
 cd o-gents
 ./setup.sh
 ./bin/gent check
@@ -350,6 +350,27 @@ Ostadix and its MCP are bundled guest capabilities. The host application needs
 Node and its selected VM backend; ordinary `gent` use does not depend on a host
 Ostadix installation. Optional host `.O` examples and `gent node` need their
 separately installed Ostadix tools.
+
+## Guest source requirements
+
+Fresh guest preparation uses Ostadix source from
+[`lostadi/OSTADIX`](https://github.com/lostadi/OSTADIX). The fallback download is
+pinned to commit `43da5a51420d95c29f7d2c07162a4e765ba11110` in
+[`src/guest-manager.mjs`](../src/guest-manager.mjs). Setup first checks
+`O_LANG_ROOT`, or `~/OSTADIX` when that variable is unset, for a local checkout.
+Without one, it fetches the pinned revision from GitHub.
+
+To choose a local source checkout explicitly:
+
+```sh
+gent guests setup --source /absolute/path/to/OSTADIX
+```
+
+The selected directory must be a repository root with no uncommitted tracked
+changes and an origin matching `lostadi/OSTADIX`. Explicit local sources use
+their current commit. The prepared guest records that commit and its source
+archive digest. Keeping this source available is required for fresh provisioning;
+a source-only o-gents clone does not replace it.
 
 ## Use a prepared gent on a QEMU host
 
@@ -392,19 +413,20 @@ results below distinguish this from cross-host networking and placement tests.
 - Normal run/MCP blocked by resources: `gent status` reports its current 20 GiB disk minimum and memory policy. Chat/task fleets have their own checks.
 
 To try another installed model, use `gent task "Your task" --model NAME`.
-Preserved setup disks are listed by `runtime/guest-refresh-20261004/latest.json`.
-Earlier OpenCode settings are backed up under
-`/Users/ustad/.config/opencode/backup-20261004-huihui-spark/`; review newer edits
-before restoring any matching files. The old Jan weights were retained.
+Before restoring an earlier setup, inspect the local guest backup receipt and
+your current configuration. Backup paths in the October records refer to the
+original machines; a fresh clone does not contain those backups.
 
 ## Prepared guest and network verification, 2026-10-04
 
-These are observed checks, not promises that every autonomous mission succeeds.
-Private evidence lives in the checkout's ignored `runtime/` and `vm/` directories.
+This is a historical record of the October 4 checks. They were not rerun for
+the November release; see [current release verification](release-verification-2026-11-17.md).
+The private evidence paths belong to the original checkout's ignored `runtime/`
+and `vm/` directories and are not included in a source clone.
 
 | Check | Observed result | Evidence |
 | --- | --- | --- |
-| Current automated suite | 315/315 tests passed with no skips, including QEMU backend, capsule, controller and assertion-normalization regressions. | `runtime/qemu-portability-20261004/npm-test-final.log` |
+| October 4 automated suite | 315/315 tests passed with no skips, including QEMU backend, capsule, controller and assertion-normalization regressions. | `runtime/qemu-portability-20261004/npm-test-final.log` |
 | Linux rack ARM64 guest | QEMU TCG on x86_64 Linux executed Ostadix, Node and native Ostadix MCP smoke; a second boot read the saved marker. Both stopped cleanly. First boot/command/shutdown: 117.9 s, including 20.0 s guest execution; second: 96.4 s. Initial disk cloning took about 108 s separately. Networking was isolated. | `runtime/qemu-portability-20261004/rack-boot.json` |
 | QEMU backend portability | On this Mac, the same guest disk retained files through QEMU → Apple → QEMU. QEMU parent and child used the shared mesh and native `o-node` to return 42. Both used local HVF acceleration. | `runtime/qemu-portability-20261004/backends-live.json` |
 | QEMU artifact/action flow | Five real QEMU executions delivered typed messages, queued publication and independent inspection of an exact 221-byte, seven-line read-only artifact. Decisions were scripted; this does not test model reasoning. | `runtime/qemu-portability-20261004/projection-live.json` |
